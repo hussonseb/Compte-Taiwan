@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com https://*.gstatic.com; style-src 'self' 'unsafe-inline' https://accounts.google.com https://*.gstatic.com; connect-src 'self' https://*.googleapis.com https://accounts.google.com; frame-src https://accounts.google.com https://docs.google.com https://drive.google.com https://*.googleusercontent.com https://content.googleapis.com; img-src 'self' data: blob: https://*.googleusercontent.com https://*.gstatic.com https://*.google.com; font-src 'self' https://*.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#14423f">
+<title>Comptes Taiwan</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand"><img src="icons/icon.svg" alt="" width="28" height="28"><div><strong>Comptes Taiwan</strong><span id="fileLabel" class="muted small">Aucun fichier</span></div></div>
+    <div class="top-actions">
+      <button id="btnSync" class="pill" hidden title="Recharger depuis Drive">Actualiser</button>
+      <button id="btnChanges" class="pill accent" hidden>0 modif.</button>
+      <button id="btnMenu" class="icon-btn" aria-label="Menu">⋮</button>
+    </div>
+  </header>
+  <div id="banner" class="banner" hidden></div>
+
+  <nav class="tabs" id="tabs">
+    <button data-view="dash" class="active"><svg class="ti" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>Accueil</button>
+    <button data-view="tx"><svg class="ti" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Lignes</button>
+    <button data-view="year"><svg class="ti" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Année</button>
+    <button data-view="hist"><svg class="ti" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19l6-6 4 4 6-8"/><path d="M15 9h5v5"/></svg>Historique</button>
+    <button data-view="inv"><svg class="ti" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6.5 6"/></svg>Patrimoine</button>
+  </nav>
+
+  <main id="main">
+    <section id="view-setup" class="view">
+      <div class="setup card">
+        <h1>Vos comptes, sans Excel</h1>
+        <p class="muted">Le classeur reste le fichier maître. L'application le lit, calcule les analyses, enregistre vos nouvelles lignes directement dans le .xlsx sans toucher aux formules ni aux graphiques.</p>
+        <button id="btnPickDrive" class="btn primary block">Se connecter à Google Drive et choisir le fichier</button>
+        <p id="driveNotConfigured" class="small muted" hidden>Google Drive n'est pas encore configuré (voir LISEZMOI.md, étape 2). Vous pouvez déjà ouvrir le fichier depuis l'appareil.</p>
+        <label class="btn block ghost file-btn">Ouvrir un fichier depuis l'appareil<input id="fileInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden></label>
+        <p class="small muted">Rien n'est envoyé ailleurs que vers votre Google Drive. Les calculs se font sur votre appareil.</p>
+      </div>
+    </section>
+    <section id="view-dash" class="view" hidden></section>
+    <section id="view-tx" class="view" hidden></section>
+    <section id="view-year" class="view" hidden></section>
+    <section id="view-hist" class="view" hidden></section>
+    <section id="view-inv" class="view" hidden></section>
+  </main>
+
+  <button id="fab" class="fab" hidden aria-label="Ajouter une ligne">+</button>
+</div>
+
+<dialog id="dlg"><form method="dialog" id="dlgForm"></form></dialog>
+<div id="menu" class="menu" hidden></div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="js/config.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/chart.umd.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/patch.js"></script>
+<script src="js/drive.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
