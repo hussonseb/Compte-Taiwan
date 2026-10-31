@@ -9,7 +9,7 @@
   var state = {
     mode: null, file: null, bytes: null, baseData: null, data: null, res: null,
     ops: loadJSON('fin_ops', []), settings: loadJSON('fin_settings', { offline: true, theme: 'auto' }),
-    view: 'dash', year: null, txFilter: { q: '', compte: '', cat: '', year: '', pending: false, limit: 80 }, yearCompte: '*', busy: false
+    view: 'dash', sel: null, year: null, txFilter: { q: '', compte: '', cat: '', year: '', pending: false, limit: 80 }, yearCompte: '*', busy: false
   };
   function loadJSON(k, d) { try { var v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } }
   function saveJSON(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
@@ -207,7 +207,7 @@
     $('#fileLabel').textContent = has ? (state.file.name + (state.mode === 'drive' ? ' · Drive' : ' · fichier local')) : 'Aucun fichier';
     $('#btnSync').hidden = state.mode !== 'drive';
     var b = $('#btnChanges'); b.hidden = !state.ops.length; b.textContent = state.ops.length + ' modif.' + (state.ops.some(function (o) { return o.error; }) ? ' ⚠' : '');
-    $('#tabs').hidden = !has; $('#fab').hidden = !has || !(state.view === 'tx' || state.view === 'dash');
+    $('#tabs').hidden = !has; $('#fab').hidden = !has || !!state.sel || !(state.view === 'tx' || state.view === 'dash');
   }
   function renderAll() {
     renderHeader();
@@ -217,7 +217,7 @@
   }
   function show(view) {
     if (view !== 'setup' && !state.baseData) view = 'setup';
-    state.view = view;
+    state.view = view; if (view !== 'tx') { state.sel = null; var sb = $('#selbar'); if (sb) sb.hidden = true; }
     $$('.view').forEach(function (v) { v.hidden = v.id !== 'view-' + view; });
     $$('#tabs button').forEach(function (b) { b.classList.toggle('active', b.dataset.view === view); });
     if (view === 'setup') { $('#driveNotConfigured').hidden = D.configured(); $('#btnPickDrive').disabled = !D.configured(); renderHeader(); return; }
@@ -301,7 +301,51 @@
     return '<li data-row="' + esc(key) + '"><span class="o">' + esc(t.objet || '(sans objet)') + '</span><span class="a ' + cls(t.net) + '">' + signed(t.net) + '</span>' +
       '<span class="m">' + (t.date != null ? dstr(t.date) : '—') + ' · ' + esc(t.compte) + ' ' + tags + '</span><span></span></li>';
   }
-  function bindTxItems(root) { $$('.txlist li[data-row]', root).forEach(function (li) { li.onclick = function () { openTxForm(li.dataset.row); }; }); }
+  function bindTxItems(root) {
+    $$('.txlist li[data-row]', root).forEach(function (li) {
+      li.onclick = function () {
+        if (state.sel && root.id === 'view-tx') { var k = li.dataset.row; if (state.sel.has(k)) state.sel.delete(k); else state.sel.add(k); li.classList.toggle('picked'); renderSelBar(); return; }
+        openTxForm(li.dataset.row);
+      };
+    });
+  }
+  // ---------- selection multiple et datation groupee ----------
+  function next9(offset) { var n = new Date(), y = n.getFullYear(), m = n.getMonth() + 1; if (n.getDate() > 9) m++; m += offset || 0; while (m > 12) { m -= 12; y++; } return E.partsToSerial(y, m, 9); }
+  function selRows() { return state.data.tx.filter(function (t) { return state.sel && state.sel.has(String(t.row)) && !t.deleted; }); }
+  function renderSelBar() {
+    var bar = $('#selbar'); if (!bar) return;
+    if (!state.sel) { bar.hidden = true; return; }
+    var rows = selRows(), tot = rows.reduce(function (s, t) { return s + t.net; }, 0);
+    bar.hidden = false;
+    bar.innerHTML = '<span><b>' + rows.length + '</b> sélectionnée(s) · net <b class="' + cls(tot) + '">' + signed(tot) + '</b></span><span class="sb-actions"><button type="button" class="btn" id="sbCancel">Annuler</button><button type="button" class="btn primary" id="sbDate"' + (rows.length ? '' : ' disabled') + '>Dater…</button></span>';
+    $('#sbCancel').onclick = function () { state.sel = null; renderTx(); };
+    $('#sbDate').onclick = openBulkDate;
+  }
+  function openBulkDate() {
+    var rows = selRows(); if (!rows.length) return;
+    var a = next9(0), b = next9(1), today = E.todaySerial();
+    var chip = function (v, l) { return '<button type="button" class="btn chipd" data-d="' + v + '">' + l + '</button>'; };
+    dlg('<h2>Dater ' + rows.length + ' ligne(s)</h2><p class="small muted">Même date de débit pour toutes les lignes sélectionnées (ex. prélèvement de la carte de crédit).</p>' +
+      '<div class="chips">' + chip(a, 'Prélèvement CB ' + dstr(a)) + chip(b, 'Prélèvement CB ' + dstr(b)) + chip(today, 'Aujourd\'hui') + '</div>' +
+      '<label class="f"><span>Date</span><input type="date" id="bdDate" value="' + dinput(a) + '"></label>' +
+      '<div class="actions"><button type="button" class="btn" id="bdCancel">Annuler</button><button type="button" class="btn primary" id="bdOk">Appliquer</button></div>', function (f) {
+      $$('.chipd', f).forEach(function (c) { c.onclick = function () { $('#bdDate', f).value = dinput(+c.dataset.d); $$('.chipd', f).forEach(function (x) { x.classList.toggle('primary', x === c); }); }; });
+      $('#bdCancel', f).onclick = closeDlg;
+      $('#bdOk', f).onclick = function () {
+        var d = fromInput($('#bdDate', f).value); if (d == null) return;
+        var ops = state.ops.slice();
+        rows.forEach(function (t) {
+          var data = { date: d, compte: t.compte, objet: t.objet, force: t.force, credit: t.credit, debit: t.debit };
+          if (t.isNew) { ops[t.opIndex] = Object.assign({}, ops[t.opIndex], { data: data }); delete ops[t.opIndex].error; return; }
+          var base = state.baseData.tx.find(function (x) { return x.row === t.row; });
+          var op = { type: 'editTx', row: t.row, data: data, expect: { date: base.date, objet: base.objet, credit: base.credit, debit: base.debit, compte: base.compte } };
+          var i = ops.findIndex(function (o) { return (o.type === 'editTx' || o.type === 'deleteTx') && o.row === t.row; });
+          if (i >= 0) ops[i] = op; else ops.push(op);
+        });
+        state.sel = null; closeDlg(); setOps(ops); toast(rows.length + ' ligne(s) datée(s) au ' + dstr(d) + ' — à enregistrer', 3500);
+      };
+    });
+  }
   function filteredTx() {
     var f = state.txFilter, q = f.q.trim().toLowerCase();
     return state.data.tx.filter(function (t) {
@@ -328,8 +372,9 @@
       '<label class="check" style="margin:0"><input type="checkbox" id="txp"' + (f.pending ? ' checked' : '') + '> En attente</label></div>';
     var rows = filteredTx(), tot = rows.reduce(function (s, t) { return s + (t.deleted ? 0 : t.net); }, 0);
     if (f.month) html += '<p class="small muted">Filtre mois : ' + MONTHS_SHORT[f.month - 1] + ' <button class="linkbtn" id="txclrm">retirer</button></p>';
-    html += '<div class="card"><div class="chart-head"><h2>' + rows.length + ' ligne(s)</h2><span class="small muted">Net : <b class="' + cls(tot) + '">' + signed(tot) + '</b></span></div>';
-    html += rows.length ? '<ul class="txlist">' + rows.slice(0, f.limit).map(txItem).join('') + '</ul>' : '<div class="empty">Aucune ligne.</div>';
+    html += '<div class="card"><div class="chart-head"><h2>' + rows.length + ' ligne(s)</h2><span class="small muted">Net : <b class="' + cls(tot) + '">' + signed(tot) + '</b> · ' +
+      (state.sel ? '<button class="linkbtn" id="txall">Tout sélectionner</button>' : '<button class="linkbtn" id="txsel">Sélectionner</button>') + '</span></div>';
+    html += rows.length ? '<ul class="txlist' + (state.sel ? ' selecting' : '') + '">' + rows.slice(0, f.limit).map(function (t) { var h = txItem(t); return state.sel && state.sel.has(String(t.row)) ? h.replace('<li ', '<li class="picked" ') : h; }).join('') + '</ul>' : '<div class="empty">Aucune ligne.</div>';
     if (rows.length > f.limit) html += '<button class="btn more" id="txmore">Afficher plus (' + (rows.length - f.limit) + ')</button>';
     html += '</div>';
     $('#view-tx').innerHTML = html;
@@ -342,6 +387,9 @@
     var cm = $('#txclrm'); if (cm) cm.onclick = function () { upd('month', null); };
     var mo = $('#txmore'); if (mo) mo.onclick = function () { f.limit += 200; renderTx(); };
     bindTxItems($('#view-tx'));
+    var ts = $('#txsel'); if (ts) ts.onclick = function () { if (privacy.mode !== 'off') return toast('Repassez en montants réels (bouton 👁) pour modifier'); state.sel = new Set(); if (!f.pending && state.res.pendingRows.length) { f.pending = true; } renderTx(); };
+    var ta = $('#txall'); if (ta) ta.onclick = function () { rows.slice(0, f.limit).forEach(function (t) { if (!t.deleted) state.sel.add(String(t.row)); }); renderTx(); };
+    renderSelBar(); renderHeader();
   }
 
   // ---------- formulaire ligne ----------

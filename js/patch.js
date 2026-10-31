@@ -148,7 +148,10 @@
       var row = findRow(txXml, rowNum), txt = row.text;
       var vals = { A: d.date == null ? null : d.date, B: d.compte || null, C: d.objet || null, D: d.force || null, F: d.credit ? +d.credit : null, G: d.debit ? +d.debit : null };
       INPUT.forEach(function (c) { txt = setInput(txt, c, rowNum, vals[c]); });
-      txt = applyStyleSwap(txt, rowNum, opts.wasPending, d.date == null && !opts.clearing);
+      // Convention du classeur : lignes carte de credit en attente surlignees en jaune.
+      // Nouvelle ligne sans date -> style jaune ; ligne datee -> on GARDE la couleur (trace carte) ; suppression -> style normal.
+      if (opts.clearing) txt = applyStyleSwap(txt, rowNum, true, false);
+      else if (d.date == null && !opts.wasPending) txt = applyStyleSwap(txt, rowNum, false, true);
       txXml = replaceRow(txXml, row, txt);
     }
     function modelRow(rowNum) { return data.tx.find(function (t) { return t.row === rowNum; }); }
