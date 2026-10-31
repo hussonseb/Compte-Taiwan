@@ -184,3 +184,11 @@ dialog::backdrop { background: rgba(10,10,8,.45); }
   .card { padding: 14px; }
   .toolbar select { flex: 1 1 40%; }
 }
+
+/* mode confidentialite */
+body.priv-blur .kpi .v, body.priv-blur .kpi .s, body.priv-blur .txlist .a, body.priv-blur td.n, body.priv-blur .chk b,
+body.priv-blur .chart canvas, body.priv-blur .inline-edit input, body.priv-blur .chart-head .small b { filter: blur(7px); user-select: none; }
+body.priv-demo .inline-edit input, body.priv-demo #rateVal { filter: blur(6px); pointer-events: none; }
+body.priv-blur .inline-edit input, body.priv-blur select { pointer-events: none; }
+body.priv-demo .topbar::after { content: "Montants fictifs"; position: absolute; left: 50%; transform: translateX(-50%); bottom: -11px; font-size: 11px; background: var(--warn-bg); color: var(--ink); padding: 1px 8px; border-radius: 999px; }
+#btnPriv { min-width: 40px; }

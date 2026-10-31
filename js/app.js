@@ -30,7 +30,21 @@
   var nf2 = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
   var nfc = new Intl.NumberFormat('fr-FR', { notation: 'compact', maximumFractionDigits: 1 });
   var pf = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 1 });
-  function n0(v) { return v == null || isNaN(v) ? '–' : nf0.format(Math.round(v)).replace(/ /g, ' '); }
+  // ---------- mode confidentialite ----------
+  // 'off' | 'blur' (montants floutes) | 'demo' (montants multiplies par un facteur secret, coherents entre eux)
+  var privacy = loadJSON('fin_privacy', { mode: 'off', k: 1 });
+  function pk() { return privacy.mode === 'demo' ? privacy.k : 1; }
+  function setPrivacy(mode) {
+    privacy = { mode: mode, k: mode === 'demo' ? +(Math.random() < 0.5 ? 0.4 + Math.random() * 0.35 : 1.4 + Math.random() * 1.1).toFixed(4) : 1 };
+    saveJSON('fin_privacy', privacy); applyPrivacy(); renderAll();
+    toast(mode === 'off' ? 'Montants réels affichés' : mode === 'blur' ? 'Montants floutés' : 'Mode démo : montants fictifs');
+  }
+  function applyPrivacy() {
+    document.body.classList.toggle('priv-blur', privacy.mode === 'blur');
+    document.body.classList.toggle('priv-demo', privacy.mode === 'demo');
+    var b = $('#btnPriv'); if (b) { b.textContent = privacy.mode === 'off' ? '👁' : privacy.mode === 'blur' ? 'Flou' : 'Démo'; b.classList.toggle('accent', privacy.mode !== 'off'); }
+  }
+  function n0(v) { if (v != null && !isNaN(v)) v = v * pk(); return v == null || isNaN(v) ? '–' : nf0.format(Math.round(v)).replace(/ /g, ' '); }
   function ntd(v) { return n0(v) + ' NT$'; }
   function eur(v) { return n0(v) + ' €'; }
   function signed(v) { return (v > 0 ? '+' : '') + n0(v); }
@@ -219,7 +233,7 @@
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (c) { return ' ' + c.dataset.label + ' : ' + n0(c.parsed.y != null ? c.parsed.y : c.parsed.x); } } } },
       scales: {
         x: { grid: { display: false }, ticks: { color: ink3, maxRotation: 0, autoSkipPadding: 8 }, border: { color: grid } },
-        y: { grid: { color: grid }, border: { display: false }, ticks: { color: ink3, callback: function (v) { return nfc.format(v); } } }
+        y: { grid: { color: grid }, border: { display: false }, ticks: { color: ink3, callback: function (v) { return nfc.format(v * pk()); } } }
       }
     };
     return Object.assign(o, extra || {});
@@ -339,6 +353,7 @@
   }
   function openTxForm(rowKey, opts) {
     opts = opts || {};
+    if (privacy.mode !== 'off') { toast('Repassez en montants réels (bouton 👁) pour saisir ou modifier'); return; }
     var d = state.data, C = d.config, isNewForm = rowKey == null;
     var t = isNewForm ? null : d.tx.find(function (x) { return String(x.row) === String(rowKey); });
     if (!isNewForm && !t) return;
@@ -432,7 +447,7 @@
     $('#ySel').onchange = function (e) { state.year = +e.target.value; renderYear(); };
     $$('#yCpt button').forEach(function (b) { b.onclick = function () { state.yearCompte = b.dataset.v; renderYear(); }; });
     $$('#view-year td[data-cat]').forEach(function (td) { td.onclick = function () { state.txFilter = { q: '', compte: cpt === '*' ? '' : cpt, cat: td.dataset.cat, year: String(y), month: +td.dataset.m, pending: false, limit: 80 }; show('tx'); }; });
-    var o = baseOpts({ indexAxis: 'y' }); o.scales = { x: { grid: { color: css('--grid') }, border: { display: false }, ticks: { color: css('--ink-3'), callback: function (v) { return nfc.format(v); } } }, y: { grid: { display: false }, ticks: { color: css('--ink-2') } } };
+    var o = baseOpts({ indexAxis: 'y' }); o.scales = { x: { grid: { color: css('--grid') }, border: { display: false }, ticks: { color: css('--ink-3'), callback: function (v) { return nfc.format(v * pk()); } } }, y: { grid: { display: false }, ticks: { color: css('--ink-2') } } };
     o.interaction = { mode: 'nearest', axis: 'y', intersect: false };
     o.plugins.tooltip.callbacks.label = function (c) { return ' ' + n0(c.parsed.x) + ' NT$'; };
     chart('cCat', { type: 'bar', data: { labels: sp.map(function (x) { return x[0]; }), datasets: [Object.assign(barDs('Débits', sp.map(function (x) { return x[1]; }), css('--s1')), { borderSkipped: 'start' })] }, options: o });
@@ -580,6 +595,7 @@
     $('#btnSync').onclick = function () { syncDrive(false); };
     $('#btnChanges').onclick = openChanges;
     $('#btnMenu').onclick = openMenu;
+    $('#btnPriv').onclick = function () { setPrivacy(privacy.mode === 'off' ? 'blur' : privacy.mode === 'blur' ? 'demo' : 'off'); };
     $('#fab').onclick = function () { openTxForm(null); };
     document.addEventListener('click', function (e) { var m = $('#menu'); if (!m.hidden && !m.contains(e.target) && e.target.id !== 'btnMenu') m.hidden = true; });
     $('#dlg').addEventListener('click', function (e) { if (e.target === $('#dlg')) closeDlg(); });
@@ -588,7 +604,7 @@
     // les lignes en attente : bouton « ajouter la date » via appui long non necessaire, le formulaire s'ouvre au toucher
   }
   async function boot() {
-    applyTheme(); bind();
+    applyTheme(); bind(); applyPrivacy();
     var cached = state.settings.offline ? await idbGet('file') : null;
     if (cached && cached.bytes) {
       try {
