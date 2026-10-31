@@ -41,6 +41,13 @@ Remplacez `CLIENT_ID`, `API_KEY` et `APP_ID` (numéro du projet), puis renvoyez 
 - Le compteur **« N modif. »** en haut liste ce qui n'est pas encore enregistré. Bouton « Enregistrer sur Drive ».
 - **Patrimoine** : saisissez la valeur actuelle des plateformes, le Compte FR, le taux de change, ou ajoutez un mouvement d'investissement.
 
+## Nouveautés V3 (classeur avec Carte, Budget, Historique patrimoine)
+- **Carte de crédit** : cocher « Carte de crédit (CB) » et saisir la date d'achat. La ligne reste en attente et l'app calcule le prélèvement (achats du 21 au 20 → prélevés le 9 du mois suivant ; paramètres JOUR_CLOTURE / JOUR_PRELEVEMENT de Config). Accueil → « Carte de crédit – à prélever » → **Rapprocher…** : sélection du relevé, contrôle du total contre le montant de la banque, datation au jour du prélèvement.
+- **Budget** : onglet dédié, port exact de « Budget & Prevision » (mois / cumul / année avec prévision). Les budgets restent ceux de l'onglet Situations.
+- **Historique** : relevés du patrimoine à valeur de marché (tableau Snapshots) ; bouton « Enregistrer un relevé » qui fige les valeurs du jour.
+- Taux d'épargne réel (investissements = épargne) dans l'accueil et l'historique ; Family investment valorisé au coût (non modifiable).
+- L'application repère désormais les colonnes par leur en-tête et le taux par son libellé « 1 EUR = » : déplacer un bloc dans Excel ne la casse plus.
+
 ## Règle importante quand vous travaillez aussi dans Excel
 L'application suit le fichier par son **identifiant Drive**. Pour enregistrer depuis Excel, gardez le même fichier :
 - soit avec Google Drive pour ordinateur (le fichier synchronisé est mis à jour sur place),

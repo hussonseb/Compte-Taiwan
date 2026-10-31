@@ -37,11 +37,12 @@
 
   // Lit toutes les cellules d'une feuille -> Map "A1" -> valeur
   function parseCells(xml, sst) {
-    var cells = new Map();
+    var cells = new Map(); cells.formulas = new Set();
     var re = /<c r="([A-Z]+\d+)"([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g, m;
     while ((m = re.exec(xml))) {
       var attrs = m[2], inner = m[3];
       if (inner == null) continue;
+      if (inner.indexOf('<f') !== -1) cells.formulas.add(m[1]);
       var tM = / t="([^"]+)"/.exec(attrs); var t = tM ? tM[1] : 'n';
       var v;
       if (t === 'inlineStr') {
@@ -89,8 +90,12 @@
       var tx = await zip.file(tableFiles[i]).async('string');
       var nm = /<table [^>]*\bname="([^"]+)"/.exec(tx)[1];
       var ref = /<table [^>]*\bref="([^"]+)"/.exec(tx)[1];
-      tables[nm] = { path: tableFiles[i], ref: ref, range: parseRange(ref) };
+      var rng = parseRange(ref), cols = {}, ci = 0, sc = colToNum(rng.s.col);
+      tx.replace(/<tableColumn [^>]*\bname="([^"]+)"/g, function (a, n) { cols[decodeXml(n).toLowerCase()] = numToCol(sc + ci++); return a; });
+      tables[nm] = { path: tableFiles[i], ref: ref, range: rng, cols: cols };
     }
+    var names = {};
+    wbXml.replace(/<definedName [^>]*\bname="([^"]+)"[^>]*>([^<]*)<\/definedName>/g, function (a, n, v) { names[n] = decodeXml(v); return a; });
     var cache = {};
     async function cells(name) {
       if (!cache[name]) {
@@ -99,7 +104,7 @@
       }
       return cache[name];
     }
-    return { zip: zip, sheets: sheets, tables: tables, sst: sst, cells: cells };
+    return { zip: zip, sheets: sheets, tables: tables, sst: sst, cells: cells, names: names };
   }
 
   function isBlank(v) { return v === null || v === undefined || v === ''; }
@@ -112,21 +117,28 @@
     var T = wb.tables.Transactions, R = wb.tables.Rules, I = wb.tables.InvDetail;
     if (!T) throw new Error('Tableau "Transactions" introuvable dans le classeur.');
     var tc = await wb.cells('Transactions');
+    // colonnes reperees par leur en-tete (robuste aux deplacements)
+    var COL = function (name, fb) { return T.cols[name.toLowerCase()] || fb; };
+    var TC = { date: COL('Date', 'A'), compte: COL('Compte', 'B'), objet: COL('Objet', 'C'), force: COL('Force', 'D'), cat: COL('Categorie', 'E'),
+      credit: COL('Credit', 'F'), debit: COL('Debit', 'G'), statut: COL('Statut', 'H'), net: COL('Net', 'I'), annee: COL('Annee', 'J'), mois: COL('Mois', 'K'),
+      carte: T.cols['carte'] || null, achat: T.cols['date achat'] || null, prevu: T.cols['prelevement prevu'] || null };
 
     var tx = [];
     for (var r = T.range.s.row + 1; r <= T.range.e.row; r++) {
-      var d = tc.get('A' + r);
+      var d = tc.get(TC.date + r), da = TC.achat ? tc.get(TC.achat + r) : null;
       var row = {
         row: r,
         date: typeof d === 'number' ? d : null,
-        compte: str(tc.get('B' + r)),
-        objet: str(tc.get('C' + r)),
-        force: str(tc.get('D' + r)),
-        credit: num(tc.get('F' + r)),
-        debit: num(tc.get('G' + r)),
-        cachedCat: str(tc.get('E' + r))
+        compte: str(tc.get(TC.compte + r)),
+        objet: str(tc.get(TC.objet + r)),
+        force: str(tc.get(TC.force + r)),
+        credit: num(tc.get(TC.credit + r)),
+        debit: num(tc.get(TC.debit + r)),
+        carte: TC.carte ? str(tc.get(TC.carte + r)) : '',
+        achat: typeof da === 'number' ? da : null,
+        cachedCat: str(tc.get(TC.cat + r))
       };
-      row.empty = row.date === null && !row.compte && !row.objet && !row.force && !row.credit && !row.debit;
+      row.empty = row.date === null && !row.compte && !row.objet && !row.force && !row.credit && !row.debit && !row.carte && row.achat === null;
       tx.push(row);
     }
 
@@ -150,16 +162,32 @@
       withholding: num(cfg.get('K2'))
     };
 
-    var rate = num(tc.get('N20'));
-    if (!rate) warnings.push('Taux de change introuvable en Transactions!N20.');
-    var rateDate = typeof tc.get('N21') === 'number' ? tc.get('N21') : null;
+    // taux de change : cellule a droite du libelle « 1 EUR = ... »
+    var rateRef = null;
+    tc.forEach(function (v, k) { if (!rateRef && typeof v === 'string' && /^1 EUR =/i.test(v)) { var p = /^([A-Z]+)(\d+)$/.exec(k); rateRef = { col: numToCol(colToNum(p[1]) + 1), row: +p[2] }; } });
+    if (!rateRef) rateRef = { col: 'N', row: 20 };
+    var rate = num(tc.get(rateRef.col + rateRef.row));
+    if (!rate) warnings.push('Taux de change introuvable (libelle « 1 EUR = » dans Transactions).');
+    var rd = tc.get(rateRef.col + (rateRef.row + 1)), rateDate = typeof rd === 'number' ? rd : null;
+
+    // parametres carte de credit (noms definis), mois de regularisation d'impot
+    async function nameVal(n, dflt) {
+      var ref = wb.names[n]; if (!ref) return dflt;
+      var m = /^'?([^'!]+)'?!\$?([A-Z]+)\$?(\d+)$/.exec(ref); if (!m || !wb.sheets[m[1]]) return dflt;
+      var v = (await wb.cells(m[1])).get(m[2] + m[3]); return typeof v === 'number' ? v : dflt;
+    }
+    config.jourCloture = await nameVal('JOUR_CLOTURE', 20);
+    config.jourPrelevement = await nameVal('JOUR_PRELEVEMENT', 9);
+    config.taxMonth = /regularisation/i.test(str(cfg.get('J5'))) && typeof cfg.get('K5') === 'number' ? cfg.get('K5') : 6;
+    config.hasCard = !!TC.carte;
 
     var ic = await wb.cells('Investissements');
     var platforms = [];
     for (var r3 = 4; r3 < 40; r3++) {
       var a = str(ic.get('A' + r3));
       if (!a || /^TOTAL\s/i.test(a)) break;
-      platforms.push({ row: r3, type: a, value: isBlank(ic.get('D' + r3)) ? null : num(ic.get('D' + r3)), devise: str(ic.get('E' + r3)) || 'NTD', start: typeof ic.get('L' + r3) === 'number' ? ic.get('L' + r3) : null });
+      platforms.push({ row: r3, type: a, value: isBlank(ic.get('D' + r3)) ? null : num(ic.get('D' + r3)), devise: str(ic.get('E' + r3)) || 'NTD', start: typeof ic.get('L' + r3) === 'number' ? ic.get('L' + r3) : null,
+        locked: ic.formulas.has('D' + r3), note: str(ic.get('K' + r3)) });
     }
     var fr = { row: 14, value: null, devise: 'EUR' };
     for (var r4 = 10; r4 < 30; r4++) {
@@ -181,7 +209,34 @@
         inv.push(it);
       }
     }
-    return { tx: tx, rules: rules, config: config, rate: rate, rateDate: rateDate, platforms: platforms, fr: fr, others: others, inv: inv, warnings: warnings, tableRef: T.ref };
+    // Budget & Prevision : libelles, sens, methode et budgets mensuels (valeurs issues de Situations)
+    var budget = null, BS = 'Budget & Prevision';
+    if (wb.sheets[BS]) {
+      var bc = await wb.cells(BS); budget = { rows: [], objective: null };
+      for (var rb = 12; rb <= 30; rb++) {
+        var lab = str(bc.get('A' + rb)), sens = str(bc.get('B' + rb));
+        if (!lab || !sens) continue;
+        budget.rows.push({ row: rb, label: lab, sens: sens, method: str(bc.get('C' + rb)) || 'Rythme 6 mois', budget: isBlank(bc.get('D' + rb)) ? null : num(bc.get('D' + rb)) });
+      }
+    }
+    // Historique patrimoine : tableau Snapshots
+    var snaps = null, S = wb.tables.Snapshots;
+    if (S) {
+      var hs = Object.keys(wb.sheets).find(function (n) { return /historique patrimoine/i.test(n); });
+      var sc2 = await wb.cells(hs); snaps = { sheet: hs, cols: S.cols, rows: [] };
+      // colonnes saisies en EUR (hors totaux calcules)
+      var snapAssetHeads = Object.keys(S.cols).filter(function (h) { return / \(eur\)$/.test(h) && !/^patrimoine /.test(h); });
+      for (var r7 = S.range.s.row + 1; r7 <= S.range.e.row; r7++) {
+        var sd = sc2.get((S.cols['date'] || 'A') + r7); if (typeof sd !== 'number') continue;
+        var o = { row: r7, date: sd, rate: num(sc2.get((S.cols['taux eur/ntd'] || 'B') + r7)), assets: {} };
+        snapAssetHeads.forEach(function (h) { o.assets[h.replace(/ \(eur\)$/, '')] = num(sc2.get(S.cols[h] + r7)); });
+        o.cachedTotal = sc2.get((S.cols['patrimoine total (ntd)'] || 'I') + r7);
+        snaps.rows.push(o);
+      }
+      snaps.assetCols = snapAssetHeads.map(function (h) { return h.replace(/ \(eur\)$/, ''); });
+    }
+    return { tx: tx, rules: rules, config: config, rate: rate, rateDate: rateDate, rateRef: rateRef, platforms: platforms, fr: fr, others: others, inv: inv,
+      warnings: warnings, tableRef: T.ref, txCols: TC, budget: budget, snaps: snaps };
   }
 
   // ---------- logique Excel portee ----------
@@ -216,6 +271,13 @@
     return { cat: 'Vie Quotidienne', src: 'default' };
   }
 
+  // Prelevement prevu : achat du (JOUR_CLOTURE+1) au JOUR_CLOTURE -> preleve le JOUR_PRELEVEMENT du mois suivant la cloture
+  function prevu(t, cfg) {
+    if (lc(t.carte) !== 'cb' || t.achat == null) return null;
+    var p = serialToParts(t.achat), jc = cfg.jourCloture || 20, jp = cfg.jourPrelevement || 9;
+    var m = p.m + (p.d > jc ? 2 : 1), y = p.y; while (m > 12) { m -= 12; y++; }
+    return partsToSerial(y, m, jp);
+  }
   function serialToParts(s) { var d = new Date(Math.round((s - 25569) * 86400000)); return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() }; }
   function partsToSerial(y, m, d) { return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 86400000); }
   function todaySerial(now) { now = now || new Date(); return partsToSerial(now.getFullYear(), now.getMonth() + 1, now.getDate()); }
@@ -228,6 +290,7 @@
       t.cat = c.cat; t.catSrc = c.src;
       t.pending = t.date === null;
       t.net = t.credit - t.debit;
+      t.prevu = prevu(t, data.config);
       if (t.date !== null) { var p = serialToParts(t.date); t.year = p.y; t.month = p.m; } else { t.year = null; t.month = null; }
     });
     return data;
@@ -292,7 +355,8 @@
       var y = years[yy], S = y.salCred * gross; cum += y.bilan;
       return { year: yy, revenus: y.R + S, revenusNets: y.R, depenses: y.debNonTIB + S, bilan: y.bilan, cumul: cum,
         tauxEpargne: y.R ? y.bilan / y.R : null, investissements: y.inv, loyerGlf: y.loyGlf, vieQuotidienne: y.vq,
-        depensesFixes: y.df, extras: y.ext, impots: y.imp + S, retenueEstimee: S, business: y.bus };
+        depensesFixes: y.df, extras: y.ext, impots: y.imp + S, retenueEstimee: S, business: y.bus,
+        epargneReelle: y.R - y.debNonTIB, tauxReel: y.R ? (y.R - y.debNonTIB) / y.R : 0 };
     });
 
     // Onglets annuels : matrice categorie x mois, filtre compte optionnel
@@ -398,13 +462,81 @@
       wealth.push(w);
     }
 
+    // ---- Carte de credit : lignes CB en attente, regroupees par prelevement prevu ----
+    var cbPending = rows.filter(function (t) { return t.pending && lc(t.carte) === 'cb'; });
+    var cycles = {};
+    cbPending.forEach(function (t) { var k = t.prevu == null ? 'inconnu' : String(t.prevu); (cycles[k] = cycles[k] || { prevu: t.prevu, rows: [], total: 0 }); cycles[k].rows.push(t); cycles[k].total += t.debit - t.credit; });
+    var cb = { pendingTotal: cbPending.reduce(function (s, t) { return s + t.net; }, 0), count: cbPending.length,
+      cycles: Object.keys(cycles).map(function (k) { return cycles[k]; }).sort(function (a, b) { return (a.prevu == null) - (b.prevu == null) || a.prevu - b.prevu; }) };
+
+    // ---- Budget & Prevision (port de l'onglet) ----
+    var LOY_GLF = [LOY, GLF];
+    function sumNet(cats, f) { var s = 0; rows.forEach(function (t) { if (cats.some(function (c) { return eq(c, t.cat); }) && f(t)) s += t.net; }); return s; }
+    function budget(year, month) {
+      var B = data.budget; if (!B) return null;
+      var cutoff = partsToSerial(year, month + 1, 1) - 1, m6 = month - 5, y6 = year; while (m6 < 1) { m6 += 12; y6--; }
+      var winStart = partsToSerial(y6, m6, 1), rest = 12 - month, taxM = C.taxMonth || 6;
+      var lines = B.rows.map(function (b) {
+        var cats = /loyer/i.test(b.label) && /guanlifei/i.test(b.label) ? LOY_GLF : [b.label];
+        var sg = b.sens === 'Revenu' ? 1 : -1, rev = b.sens === 'Revenu', inv = !rev && b.sens !== 'Depense';
+        var E_ = sg * sumNet(cats, function (t) { return t.year === year && t.month === month; });
+        var H = sg * sumNet(cats, function (t) { return t.year === year && t.month <= month; });
+        var J = sg * sumNet(cats, function (t) { return t.year === year - 1 && t.month <= month; });
+        var L = sg * sumNet(cats, function (t) { return t.date != null && t.date >= winStart && t.date <= cutoff; }) / 6;
+        var Pv = sg * sumNet(cats, function (t) { return t.year === year - 1; });
+        var M = H + (b.method === 'Comme N-1' ? Pv - J : L * rest);
+        var D_, G, N;
+        if (eq(b.label, IMP)) { D_ = month === taxM ? Pv : 0; G = month >= taxM ? Pv : 0; N = Pv; }
+        else { D_ = b.budget; G = D_ == null ? null : D_ * month; N = D_ == null ? null : D_ * 12; }
+        var fav = function (bud, real) { return bud == null ? null : (rev || inv ? real - bud : bud - real); };
+        return { label: b.label, sens: b.sens, method: b.method, row: b.row, kind: rev ? 'rev' : inv ? 'inv' : 'dep',
+          D: D_, E: E_, F: fav(D_, E_), G: G, H: H, I: fav(G, H), J: J, K: J ? H / J - 1 : null, L: L, M: M, N: N, O: fav(N, M), P: Pv };
+      });
+      var KEYS = ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'L', 'M', 'N', 'O', 'P'];
+      function tot(kind) { var o = {}; KEYS.forEach(function (k) { o[k] = 0; lines.forEach(function (l) { if (l.kind === kind) o[k] += l[k] || 0; }); }); o.K = o.J ? o.H / o.J - 1 : null; return o; }
+      var tr = tot('rev'), td = tot('dep'), sav = {};
+      KEYS.forEach(function (k) { sav[k] = /[FIO]/.test(k) ? tr[k] + td[k] : tr[k] - td[k]; });
+      sav.K = sav.J ? sav.H / sav.J - 1 : null;
+      var rate_ = {}; ['D', 'E', 'G', 'H', 'J', 'L', 'M', 'N', 'P'].forEach(function (k) { rate_[k] = tr[k] ? sav[k] / tr[k] : null; });
+      var sal = lines.find(function (l) { return eq(l.label, SAL); }), info = {};
+      if (sal) ['D', 'E', 'G', 'H', 'J', 'L', 'M', 'N', 'P'].forEach(function (k) { info[k] = sal[k] == null ? null : sal[k] * gross; });
+      return { year: year, month: month, cutoff: cutoff, rest: rest, lines: lines, totalRev: tr, totalDep: td, savings: sav, savingsRate: rate_, withholdingInfo: info };
+    }
+    var lastFull = (function () { var y = tp.y, m = tp.m - 1; if (m < 1) { m = 12; y--; } return { year: y, month: m }; })();
+
+    // ---- Historique du patrimoine (Snapshots) ----
+    function twAt(d) { var s = 0; rows.forEach(function (t) { if (t.date != null && t.date <= d) s += t.net; }); return s; }
+    var famP = data.platforms.find(function (p) { return p.row === 7; }) || data.platforms.find(function (p) { return /family/i.test(p.type); });
+    function invAt(d, types) { var s = 0; invRows.forEach(function (x) { if (x.date != null && x.date <= d && types.some(function (ty) { return eq(ty, x.type); })) s += x.ntd; }); return s; }
+    var allTypes = data.platforms.map(function (p) { return p.type; });
+    function snapCalc(sn) {
+      var eurSum = 0, eurPlat = 0;
+      Object.keys(sn.assets).forEach(function (a) { eurSum += sn.assets[a]; if (!/compte fr/i.test(a)) eurPlat += sn.assets[a]; });
+      var G = twAt(sn.date), H = famP ? invAt(sn.date, [famP.type]) : 0, K = invAt(sn.date, allTypes);
+      var I = eurSum * sn.rate + G + H;
+      return Object.assign({}, sn, { tw: G, family: H, totalNtd: I, totalEur: sn.rate ? I / sn.rate : 0, invested: K, latent: eurPlat * sn.rate + H - K });
+    }
+    var snapshots = null, liveSnap = null;
+    if (data.snaps) {
+      snapshots = data.snaps.rows.map(snapCalc);
+      snapshots.forEach(function (x, i) { x.variation = i ? x.totalNtd - snapshots[i - 1].totalNtd : 0; });
+      var assets = {};
+      data.snaps.assetCols.forEach(function (a) {
+        if (/compte fr/i.test(a)) { assets[a] = data.fr.value == null ? 0 : (data.fr.devise === 'EUR' ? data.fr.value : data.fr.value / rate); return; }
+        var p = platforms.find(function (x) { return eq(x.type, a); }); assets[a] = p ? p.valueEur : 0;
+      });
+      liveSnap = snapCalc({ date: today, rate: rate, assets: assets });
+      liveSnap.variation = snapshots.length ? liveSnap.totalNtd - snapshots[snapshots.length - 1].totalNtd : 0;
+    }
+
     return {
+      cb: cb, budget: budget, lastFullMonth: lastFull, snapshots: snapshots, liveSnap: liveSnap,
       today: today, rate: rate, balances: bal, tracked: tracked, pendingTotal: pendingTotal,
       pendingRows: rows.filter(function (t) { return t.pending; }),
       controls: controls, annual: annual, years: yearList, yearSheet: yearSheet, monthly: monthly, rolling: rolling,
       platforms: platforms, others: others, liquid: liquid, liquidNtd: liquidNtd, platValueNtd: platValueNtd, platInvNtd: platInvNtd,
       plNtd: plNtd, netWorthNtd: netWorthNtd, netWorthEur: netWorthNtd / rate, wealth: wealth,
-      cats: { SAL: SAL, BUS: BUS, INV: INV, TRF: TRF }
+      cats: { SAL: SAL, BUS: BUS, INV: INV, TRF: TRF, IMP: IMP }
     };
   }
 
@@ -415,7 +547,7 @@
     return { wb: wb, data: data };
   }
 
-  var api = { load: load, openWorkbook: openWorkbook, extract: extract, enrich: enrich, compute: compute, categorize: categorize,
+  var api = { prevu: prevu, load: load, openWorkbook: openWorkbook, extract: extract, enrich: enrich, compute: compute, categorize: categorize,
     buildLearned: buildLearned, excelTrim: excelTrim, serialToParts: serialToParts, partsToSerial: partsToSerial, todaySerial: todaySerial,
     decodeXml: decodeXml, colToNum: colToNum, numToCol: numToCol, parseRange: parseRange, parseCells: parseCells };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FinEngine = api;

@@ -81,12 +81,13 @@
         var p = d.platforms.find(function (x) { return x.type === op.name; }); if (p) { p.value = op.value === null || op.value === '' ? null : +op.value; p.devise = op.devise || p.devise; }
       } else if (op.type === 'setFR') { d.fr.value = op.value === null || op.value === '' ? null : +op.value; d.fr.devise = op.devise || d.fr.devise; }
       else if (op.type === 'setRate') { d.rate = +op.value; if (op.date != null) d.rateDate = op.date; }
+      else if (op.type === 'addSnapshot' && d.snaps) { d.snaps.rows.push({ row: 'new' + i, isNew: true, date: op.data.date, rate: op.data.rate, assets: op.data.assets }); }
     });
     return E.enrich(d);
   }
   function normTx(x) {
-    var t = { date: x.date == null ? null : x.date, compte: x.compte || '', objet: x.objet || '', force: x.force || '', credit: +x.credit || 0, debit: +x.debit || 0 };
-    t.empty = t.date === null && !t.compte && !t.objet && !t.force && !t.credit && !t.debit; return t;
+    var t = { date: x.date == null ? null : x.date, compte: x.compte || '', objet: x.objet || '', force: x.force || '', credit: +x.credit || 0, debit: +x.debit || 0, carte: x.carte || '', achat: x.achat == null ? null : x.achat };
+    t.empty = t.date === null && !t.compte && !t.objet && !t.force && !t.credit && !t.debit && !t.carte && t.achat === null; return t;
   }
   function recompute() {
     if (!state.baseData) return;
@@ -212,7 +213,7 @@
   function renderAll() {
     renderHeader();
     if (!state.baseData) { show('setup'); return; }
-    var fn = { dash: renderDash, tx: renderTx, year: renderYear, hist: renderHist, inv: renderInv }[state.view];
+    var fn = { dash: renderDash, tx: renderTx, year: renderYear, bud: renderBudget, hist: renderHist, inv: renderInv }[state.view];
     if (fn) fn();
   }
   function show(view) {
@@ -254,7 +255,7 @@
     html += '<div class="grid g4">';
     html += '<div class="card kpi hero" style="grid-column:span 2"><div class="l">Patrimoine total</div><div class="v">' + ntd(r.netWorthNtd) + '</div><div class="s">' + eur(r.netWorthEur) + ' · 1 € = ' + nf2.format(r.rate) + ' NT$</div></div>';
     html += '<div class="card kpi"><div class="l">P&amp;L investissements</div><div class="v ' + cls(r.plNtd) + '">' + signed(r.plNtd) + '</div><div class="s">' + (r.platInvNtd ? pf.format(r.plNtd / r.platInvNtd) : '') + ' sur ' + n0(r.platInvNtd) + ' investis</div></div>';
-    html += '<div class="card kpi"><div class="l">Bilan ' + y + ' (comptes TW)</div><div class="v ' + cls(ann.bilan) + '">' + signed(ann.bilan || 0) + '</div><div class="s">Taux d\'épargne ' + (ann.tauxEpargne == null ? '–' : pf.format(ann.tauxEpargne)) + '</div></div>';
+    html += '<div class="card kpi"><div class="l">Bilan ' + y + ' (comptes TW)</div><div class="v ' + cls(ann.bilan) + '">' + signed(ann.bilan || 0) + '</div><div class="s">Taux d\'épargne ' + (ann.tauxEpargne == null ? '–' : pf.format(ann.tauxEpargne)) + ' · réel ' + (ann.tauxReel == null ? '–' : pf.format(ann.tauxReel)) + '</div></div>';
     html += '</div>';
 
     html += '<div class="grid g4 section">';
@@ -270,6 +271,13 @@
       '<span class="chk ' + (ok2 ? '' : 'bad') + '">' + (ok2 ? '✓' : '✕') + ' Écart avec le total des comptes : <b>' + n0(r.controls.ecart) + '</b></span>' +
       '<span class="chk" style="background:var(--surface-2)">Flux Mega : <b>' + n0(r.controls.mega) + '</b></span></div></div>';
 
+    if (C.hasCard && r.cb.count) {
+      html += '<div class="card section"><div class="chart-head"><h2>Carte de crédit – à prélever</h2><span class="small muted">' + r.cb.count + ' ligne(s) · <b>' + n0(-r.cb.pendingTotal) + '</b> NT$</span></div><div class="cyclist">' +
+        r.cb.cycles.map(function (c, i) {
+          var lbl = c.prevu != null ? 'Prélèvement du <b>' + dstr(c.prevu) + '</b>' : 'Sans date d\'achat (historique)';
+          return '<div class="cyc"><div class="cyc-l">' + lbl + '<div class="small muted">' + c.rows.length + ' ligne(s)</div></div><div class="cyc-r"><b class="num">' + n0(c.total) + '</b><button type="button" class="btn" data-cyc="' + i + '">Rapprocher…</button></div></div>';
+        }).join('') + '</div><p class="small muted">« Rapprocher » sélectionne les lignes du relevé, vérifie le total contre le montant débité par la banque, puis les date au jour du prélèvement.</p></div>';
+    }
     if (pend.length) {
       html += '<div class="card section"><div class="chart-head"><h2>Lignes en attente</h2><button class="linkbtn" data-goto-pending>Tout voir</button></div><ul class="txlist">' +
         pend.slice(0, 5).map(txItem).join('') + '</ul></div>';
@@ -287,6 +295,7 @@
     so.scales.x.stacked = true; so.scales.y.stacked = true;
     chart('cRolling', { type: 'bar', data: { labels: ro.map(function (x) { return MONTHS_SHORT[x.month - 1] + (x.month === 1 ? ' ' + String(x.year).slice(2) : ''); }), datasets: [barDs('Loyer + GuanLiFei', ro.map(function (x) { return x.loyerGlf; }), css('--s1'), true), barDs('Vie quotidienne + fixes', ro.map(function (x) { return x.vqDf; }), css('--s2'), true), barDs('Extras', ro.map(function (x) { return x.extras; }), css('--s3'), true)] }, options: so });
     bindTxItems($('#view-dash'));
+    $$('[data-cyc]').forEach(function (b) { b.onclick = function () { reconcileCycle(r.cb.cycles[+b.dataset.cyc]); }; });
     var gp = $('[data-goto-pending]'); if (gp) gp.onclick = function () { state.txFilter = Object.assign(state.txFilter, { q: '', compte: '', cat: '', year: '', pending: true }); show('tx'); };
   }
 
@@ -294,7 +303,8 @@
   function txItem(t) {
     var key = String(t.row);
     var tags = '';
-    if (t.pending) tags += '<span class="tag pend">En attente</span>';
+    if (t.pending) tags += '<span class="tag pend">En attente' + (t.prevu != null ? ' → ' + dstr(t.prevu).slice(0, 5) : '') + '</span>';
+    if ((t.carte || '').toUpperCase() === 'CB') tags += '<span class="tag cb">CB</span>';
     if (t.isNew) tags += '<span class="tag new">Nouveau</span>'; else if (t.edited) tags += '<span class="tag new">' + (t.deleted ? 'Supprimé' : 'Modifié') + '</span>';
     var op = t.opIndex != null ? state.ops[t.opIndex] : null; if (op && op.error) tags += '<span class="tag err">Refusé</span>';
     if (t.force) tags += '<span class="tag" title="Catégorie forcée">' + esc(t.cat) + ' •</span>'; else tags += '<span class="tag">' + esc(t.cat) + '</span>';
@@ -312,6 +322,13 @@
   // ---------- selection multiple et datation groupee ----------
   function next9(offset) { var n = new Date(), y = n.getFullYear(), m = n.getMonth() + 1; if (n.getDate() > 9) m++; m += offset || 0; while (m > 12) { m -= 12; y++; } return E.partsToSerial(y, m, 9); }
   function selRows() { return state.data.tx.filter(function (t) { return state.sel && state.sel.has(String(t.row)) && !t.deleted; }); }
+  function reconcileCycle(c) {
+    if (privacy.mode !== 'off') return toast('Repassez en montants réels (bouton 👁) pour modifier');
+    state.txFilter = Object.assign(state.txFilter, { q: '', compte: '', cat: '', year: '', month: null, pending: true, limit: 500 });
+    show('tx');
+    state.sel = new Set(c.rows.map(function (t) { return String(t.row); })); renderTx();
+    openBulkDate(c.prevu != null ? c.prevu : undefined);
+  }
   function renderSelBar() {
     var bar = $('#selbar'); if (!bar) return;
     if (!state.sel) { bar.hidden = true; return; }
@@ -319,14 +336,14 @@
     bar.hidden = false;
     bar.innerHTML = '<span><b>' + rows.length + '</b> sélectionnée(s) · net <b class="' + cls(tot) + '">' + signed(tot) + '</b></span><span class="sb-actions"><button type="button" class="btn" id="sbCancel">Annuler</button><button type="button" class="btn primary" id="sbDate"' + (rows.length ? '' : ' disabled') + '>Dater…</button></span>';
     $('#sbCancel').onclick = function () { state.sel = null; renderTx(); };
-    $('#sbDate').onclick = openBulkDate;
+    $('#sbDate').onclick = function () { openBulkDate(); };
   }
-  function openBulkDate() {
+  function openBulkDate(preset) {
     var rows = selRows(); if (!rows.length) return;
-    var a = next9(0), b = next9(1), today = E.todaySerial();
+    var a = typeof preset === 'number' ? preset : next9(0), b = typeof preset === 'number' ? next9(0) : next9(1), today = E.todaySerial();
     var chip = function (v, l) { return '<button type="button" class="btn chipd" data-d="' + v + '">' + l + '</button>'; };
     dlg('<h2>Dater ' + rows.length + ' ligne(s)</h2><p class="small muted">Même date de débit pour toutes les lignes sélectionnées (ex. prélèvement de la carte de crédit).</p>' +
-      '<div class="chips">' + chip(a, 'Prélèvement CB ' + dstr(a)) + chip(b, 'Prélèvement CB ' + dstr(b)) + chip(today, 'Aujourd\'hui') + '</div>' +
+      '<div class="chips">' + chip(a, 'Prélèvement CB ' + dstr(a)) + (b !== a ? chip(b, 'Prélèvement CB ' + dstr(b)) : '') + chip(today, 'Aujourd\'hui') + '</div>' +
       '<label class="f"><span>Date</span><input type="date" id="bdDate" value="' + dinput(a) + '"></label>' +
       '<label class="f"><span>Montant débité par la banque (facultatif, pour vérifier)</span><input type="text" inputmode="decimal" id="bdBank" autocomplete="off" placeholder="ex. 42818"></label>' +
       '<div id="bdCheck" class="recon"></div>' +
@@ -352,7 +369,7 @@
         var d = fromInput($('#bdDate', f).value); if (d == null) return;
         var ops = state.ops.slice();
         rows.forEach(function (t) {
-          var data = { date: d, compte: t.compte, objet: t.objet, force: t.force, credit: t.credit, debit: t.debit };
+          var data = { date: d, compte: t.compte, objet: t.objet, force: t.force, credit: t.credit, debit: t.debit, carte: t.carte, achat: t.achat };
           if (t.isNew) { ops[t.opIndex] = Object.assign({}, ops[t.opIndex], { data: data }); delete ops[t.opIndex].error; return; }
           var base = state.baseData.tx.find(function (x) { return x.row === t.row; });
           var op = { type: 'editTx', row: t.row, data: data, expect: { date: base.date, objet: base.objet, credit: base.credit, debit: base.debit, compte: base.compte } };
@@ -423,7 +440,8 @@
     var t = isNewForm ? null : d.tx.find(function (x) { return String(x.row) === String(rowKey); });
     if (!isNewForm && !t) return;
     var isNewRow = t && t.isNew;
-    var v = t ? { date: t.date, compte: t.compte, objet: t.objet, force: t.force, credit: t.credit, debit: t.debit } : { date: E.todaySerial(), compte: loadJSON('fin_lastCompte', C.comptes[0] || ''), objet: '', force: '', credit: 0, debit: 0 };
+    var v = t ? { date: t.date, compte: t.compte, objet: t.objet, force: t.force, credit: t.credit, debit: t.debit, carte: t.carte || '', achat: t.achat } : { date: E.todaySerial(), compte: loadJSON('fin_lastCompte', C.comptes[0] || ''), objet: '', force: '', credit: 0, debit: 0, carte: '', achat: null };
+    var isCB = (v.carte || '').toUpperCase() === 'CB';
     if (opts.setDate && v.date == null) v.date = E.todaySerial();
     var isCredit = v.credit > 0 && !v.debit;
     var amount = isCredit ? v.credit : v.debit;
@@ -435,6 +453,8 @@
       '<div class="f"><span>Compte</span><div class="seg" id="fCpt">' + C.comptes.map(function (c) { return '<button type="button" data-v="' + esc(c) + '"' + (v.compte === c ? ' class="on"' : '') + '>' + esc(c) + '</button>'; }).join('') + '</div></div>' +
       '<div class="row2"><label class="f"><span>Date</span><input id="fDate" type="date" value="' + dinput(v.date) + '"' + (v.date == null ? ' disabled' : '') + '></label>' +
       '<label class="f"><span>Catégorie</span><select id="fCat"><option value="">Automatique</option>' + cats.map(function (c) { return '<option value="' + esc(c) + '"' + (v.force === c ? ' selected' : '') + '>Forcer : ' + esc(c) + '</option>'; }).join('') + '</select></label></div>' +
+      (C.hasCard ? '<div class="cbbox"><label class="check" style="margin-top:0"><input type="checkbox" id="fCB"' + (isCB ? ' checked' : '') + '> <b>Carte de crédit (CB)</b></label>' +
+        '<div id="fCBx"' + (isCB ? '' : ' hidden') + '><label class="f" style="margin:8px 0 4px"><span>Date d\'achat</span><input type="date" id="fAchat" value="' + dinput(v.achat) + '"></label><div class="hint" id="fPrev"></div></div></div>' : '') +
       '<label class="check"><input type="checkbox" id="fPend"' + (v.date == null ? ' checked' : '') + '> Pas encore débité (en attente, sans date)</label>' +
       '<div class="hint" id="fCatHint"></div><div class="err-msg" id="fErr"></div>' +
       '<div class="actions">' + (!isNewForm ? '<button type="button" class="btn danger" id="fDel">' + (isNewRow ? 'Retirer' : 'Supprimer') + '</button>' : '') + '<button type="button" class="btn" id="fCancel">Annuler</button><button type="button" class="btn primary" id="fOk">' + (isNewForm ? 'Ajouter' : 'Valider') + '</button></div>';
@@ -444,6 +464,20 @@
       $$('#fCpt button', f).forEach(function (b) { b.onclick = function () { compte = b.dataset.v; $$('#fCpt button', f).forEach(function (x) { x.classList.toggle('on', x === b); }); }; });
       var pend = $('#fPend', f), date = $('#fDate', f);
       pend.onchange = function () { date.disabled = pend.checked; if (!pend.checked && !date.value) date.value = dinput(E.todaySerial()); };
+      var cbx = $('#fCB', f);
+      var prevHint = function () {
+        if (!cbx) return; var ach = fromInput($('#fAchat', f).value);
+        var pv = cbx.checked && ach != null ? E.prevu({ carte: 'CB', achat: ach }, C) : null;
+        $('#fPrev', f).textContent = pv ? 'Prélèvement prévu le ' + dstr(pv) + (pend.checked ? ' — la ligne reste « en attente » jusque-là.' : '') : (cbx.checked ? 'Indiquez la date d\'achat pour calculer le prélèvement.' : '');
+      };
+      if (cbx) {
+        cbx.onchange = function () {
+          $('#fCBx', f).hidden = !cbx.checked;
+          if (cbx.checked) { if (!$('#fAchat', f).value) $('#fAchat', f).value = date.value || dinput(E.todaySerial()); if (isNewForm || v.date == null) { pend.checked = true; date.disabled = true; } }
+          prevHint();
+        };
+        $('#fAchat', f).onchange = prevHint; pend.addEventListener('change', prevHint); prevHint();
+      }
       var hint = function () {
         var force = $('#fCat', f).value, obj = $('#fObj', f).value;
         if (force) { $('#fCatHint', f).textContent = 'Catégorie forcée : ' + force + '. Cet objet sera appris pour les prochaines fois.'; return; }
@@ -462,7 +496,9 @@
         var amt = parseAmount($('#fAmt', f).value), obj = $('#fObj', f).value.trim();
         var err = !(amt > 0) ? 'Montant invalide.' : !obj ? 'Objet obligatoire.' : !compte ? 'Choisissez un compte.' : (!pend.checked && !date.value) ? 'Date obligatoire (ou cochez « en attente »).' : '';
         if (err) { $('#fErr', f).textContent = err; return; }
-        var data = { date: pend.checked ? null : fromInput(date.value), compte: compte, objet: obj, force: $('#fCat', f).value, credit: sens === 'credit' ? amt : 0, debit: sens === 'debit' ? amt : 0 };
+        var cbOn = cbx ? cbx.checked : isCB;
+        var data = { date: pend.checked ? null : fromInput(date.value), compte: compte, objet: obj, force: $('#fCat', f).value, credit: sens === 'credit' ? amt : 0, debit: sens === 'debit' ? amt : 0,
+          carte: cbOn ? 'CB' : '', achat: cbOn && cbx ? fromInput($('#fAchat', f).value) : (cbOn ? v.achat : null) };
         saveJSON('fin_lastCompte', compte);
         if (isNewForm) { setOps(state.ops.concat([{ type: 'addTx', data: data }])); toast('Ligne ajoutée — à enregistrer'); }
         else if (isNewRow) { var ops = state.ops.slice(); ops[t.opIndex] = Object.assign({}, ops[t.opIndex], { data: data }); delete ops[t.opIndex].error; setOps(ops); toast('Ligne mise à jour'); }
@@ -522,13 +558,13 @@
   // ---------- Historique ----------
   function renderHist() {
     var r = state.res, a = r.annual;
-    var html = '<div class="grid g2 stack-sm"><div class="card"><h2>Revenus et dépenses par année</h2>' + legend([['Revenus', css('--s1')], ['Dépenses', css('--s2')]]) + '<div class="chart"><canvas id="cYears"></canvas></div></div>' +
+    var html = snapSection(r) + '<div class="grid g2 stack-sm section"><div class="card"><h2>Revenus et dépenses par année</h2>' + legend([['Revenus', css('--s1')], ['Dépenses', css('--s2')]]) + '<div class="chart"><canvas id="cYears"></canvas></div></div>' +
       '<div class="card"><h2>Épargne cumulée (comptes TW)</h2><div class="chart"><canvas id="cCum"></canvas></div></div></div>';
     var types = ['Comptes TW'].concat(r.platforms.map(function (p) { return p.type; })).concat(['Compte FR']);
     var cols = ['--s1', '--s2', '--s3', '--s4', '--s5', '--s6', '--s7', '--s8'].map(css);
     html += '<div class="card section"><h2>Évolution du patrimoine (soldes et montants investis, au 31/12)</h2>' + legend(types.map(function (t, i) { return [t, cols[i % 8]]; })) + '<div class="chart tall"><canvas id="cWealth"></canvas></div><p class="small muted">Montants investis (pas la valeur de marché), comme l\'onglet Analysis. L\'année en cours inclut les lignes en attente et le Compte FR.</p></div>';
-    html += '<div class="card section"><h2>Bilan par année</h2><div class="tablewrap"><table class="t"><thead><tr><th class="sticky">Année</th><th class="n">Revenus</th><th class="n">Dépenses</th><th class="n">Bilan</th><th class="n">Taux d\'épargne</th><th class="n">Épargne cumulée</th><th class="n">Investissements</th><th class="n">Impôts</th><th class="n">Loyer+GLF</th><th class="n">Vie quot.</th><th class="n">Extras</th><th class="n">Business net</th></tr></thead><tbody>' +
-      a.slice().reverse().map(function (y) { return '<tr class="click" data-y="' + y.year + '"><td class="sticky"><b>' + y.year + '</b></td><td class="n">' + n0(y.revenus) + '</td><td class="n">' + n0(y.depenses) + '</td><td class="n ' + cls(y.bilan) + '">' + signed(y.bilan) + '</td><td class="n">' + (y.tauxEpargne == null ? '–' : pf.format(y.tauxEpargne)) + '</td><td class="n">' + n0(y.cumul) + '</td><td class="n">' + n0(y.investissements) + '</td><td class="n">' + n0(y.impots) + '</td><td class="n">' + n0(y.loyerGlf) + '</td><td class="n">' + n0(y.vieQuotidienne) + '</td><td class="n">' + n0(y.extras) + '</td><td class="n ' + cls(y.business) + '">' + signed(y.business) + '</td></tr>'; }).join('') +
+    html += '<div class="card section"><h2>Bilan par année</h2><div class="tablewrap"><table class="t"><thead><tr><th class="sticky">Année</th><th class="n">Revenus</th><th class="n">Dépenses</th><th class="n">Bilan</th><th class="n">Taux d\'épargne</th><th class="n">Épargne réelle</th><th class="n">Taux réel</th><th class="n">Épargne cumulée</th><th class="n">Investissements</th><th class="n">Impôts</th><th class="n">Loyer+GLF</th><th class="n">Vie quot.</th><th class="n">Extras</th><th class="n">Business net</th></tr></thead><tbody>' +
+      a.slice().reverse().map(function (y) { return '<tr class="click" data-y="' + y.year + '"><td class="sticky"><b>' + y.year + '</b></td><td class="n">' + n0(y.revenus) + '</td><td class="n">' + n0(y.depenses) + '</td><td class="n ' + cls(y.bilan) + '">' + signed(y.bilan) + '</td><td class="n">' + (y.tauxEpargne == null ? '–' : pf.format(y.tauxEpargne)) + '</td><td class="n ' + cls(y.epargneReelle) + '">' + signed(y.epargneReelle) + '</td><td class="n">' + pf.format(y.tauxReel) + '</td><td class="n">' + n0(y.cumul) + '</td><td class="n">' + n0(y.investissements) + '</td><td class="n">' + n0(y.impots) + '</td><td class="n">' + n0(y.loyerGlf) + '</td><td class="n">' + n0(y.vieQuotidienne) + '</td><td class="n">' + n0(y.extras) + '</td><td class="n ' + cls(y.business) + '">' + signed(y.business) + '</td></tr>'; }).join('') +
       '</tbody></table></div></div>';
     $('#view-hist').innerHTML = html;
     $$('#view-hist tr[data-y]').forEach(function (tr) { tr.onclick = function () { state.year = +tr.dataset.y; show('year'); }; });
@@ -540,7 +576,81 @@
     wo.plugins.tooltip.callbacks.footer = function (items) { var s = 0; items.forEach(function (i) { s += i.parsed.y; }); return 'Total : ' + n0(s); };
     var ds = types.map(function (t, i) { return barDs(t, w.map(function (x) { return t === 'Comptes TW' ? x.comptesTW : t === 'Compte FR' ? x.compteFR : (x.byType[t] || 0); }), cols[i % 8], true); });
     chart('cWealth', { type: 'bar', data: { labels: w.map(function (x) { return String(x.year); }), datasets: ds }, options: wo });
+    bindSnap(r);
   }
+  function snapSection(r) {
+    if (!r.snapshots) return '';
+    var sn = r.snapshots, live = r.liveSnap, last = sn[sn.length - 1];
+    var h = '<div class="card"><div class="chart-head"><h2>Patrimoine à valeur de marché (relevés)</h2><button type="button" class="btn primary" id="btnSnap">+ Enregistrer un relevé</button></div>';
+    h += '<div class="grid g4" style="margin-bottom:12px">' + kpi('Aujourd\'hui (live)', n0(live.totalNtd), eur(live.totalEur)) + kpi('Plus-value latente', '<span class="' + cls(live.latent) + '">' + signed(live.latent) + '</span>', 'investi ' + n0(live.invested)) +
+      kpi('Dernier relevé', last ? n0(last.totalNtd) : '–', last ? dstr(last.date) : 'aucun') + kpi('Depuis le dernier relevé', last ? '<span class="' + cls(live.totalNtd - last.totalNtd) + '">' + signed(live.totalNtd - last.totalNtd) + '</span>' : '–', '') + '</div>';
+    if (sn.length > 1) h += legend([['Patrimoine total', css('--s1')], ['Investi cumulé', css('--s2')]]) + '<div class="chart"><canvas id="cSnap"></canvas></div>';
+    else h += '<p class="small muted">Le graphique d\'évolution apparaît à partir de 2 relevés (un par mois suffit).</p>';
+    h += '<div class="tablewrap section"><table class="t"><thead><tr><th class="sticky">Date</th><th class="n">Taux</th><th class="n">Patrimoine NT$</th><th class="n">Patrimoine €</th><th class="n">Comptes TW</th><th class="n">Investi cumulé</th><th class="n">Plus-value</th><th class="n">Variation</th></tr></thead><tbody>' +
+      sn.slice().reverse().map(function (x) { return '<tr><td class="sticky">' + dstr(x.date) + (x.isNew ? ' <span class="tag new">Nouveau</span>' : '') + '</td><td class="n">' + nf2.format(x.rate) + '</td><td class="n"><b>' + n0(x.totalNtd) + '</b></td><td class="n">' + n0(x.totalEur) + '</td><td class="n">' + n0(x.tw) + '</td><td class="n">' + n0(x.invested) + '</td><td class="n ' + cls(x.latent) + '">' + signed(x.latent) + '</td><td class="n ' + cls(x.variation) + '">' + signed(x.variation) + '</td></tr>'; }).join('') +
+      '</tbody></table></div><p class="small muted">Un relevé fige les valeurs du jour (valeurs actuelles des plateformes, Compte FR, taux de change). Mettez d\'abord à jour les valeurs dans « Patrimoine ». Comptes TW = lignes datées uniquement ; Family investment au coût.</p></div>';
+    return h;
+  }
+  function bindSnap(r) {
+    var b = $('#btnSnap'); if (!b) return;
+    b.onclick = function () {
+      if (privacy.mode !== 'off') return toast('Repassez en montants réels (bouton 👁) pour modifier');
+      var live = r.liveSnap, last = r.snapshots[r.snapshots.length - 1];
+      if (last && last.date > live.date) return toast('Le dernier relevé est daté après aujourd\'hui.');
+      if (last && last.date === live.date && !confirm('Un relevé existe déjà aujourd\'hui. En ajouter un autre ?')) return;
+      var assets = {}; Object.keys(live.assets).forEach(function (k) { assets[k] = Math.round(live.assets[k] * 100) / 100; });
+      setOps(state.ops.concat([{ type: 'addSnapshot', data: { date: live.date, rate: live.rate, assets: assets } }]));
+      toast('Relevé ajouté — à enregistrer');
+    };
+    if (r.snapshots.length > 1) {
+      var sn = r.snapshots;
+      chart('cSnap', { type: 'line', data: { labels: sn.map(function (x) { return dstr(x.date); }), datasets: [
+        { label: 'Patrimoine total', data: sn.map(function (x) { return Math.round(x.totalNtd); }), borderColor: css('--s1'), backgroundColor: css('--s1'), borderWidth: 2, pointRadius: 4, pointBorderColor: css('--surface'), pointBorderWidth: 2 },
+        { label: 'Investi cumulé', data: sn.map(function (x) { return Math.round(x.invested); }), borderColor: css('--s2'), backgroundColor: css('--s2'), borderWidth: 2, pointRadius: 4, pointBorderColor: css('--surface'), pointBorderWidth: 2 }] }, options: baseOpts() });
+    }
+  }
+
+  // ---------- Budget & Prevision ----------
+  function renderBudget() {
+    var r = state.res, d = state.data;
+    if (!d.budget) { $('#view-bud').innerHTML = '<div class="card empty">Pas d\'onglet « Budget & Prevision » dans ce classeur.</div>'; return; }
+    var B = state.bud || (state.bud = { year: r.lastFullMonth.year, month: r.lastFullMonth.month, h: 'mois' });
+    var b = r.budget(B.year, B.month);
+    var first = d.tx.filter(function (t) { return t.date != null; }).reduce(function (m, t) { return Math.min(m, t.date); }, Infinity);
+    var fp = isFinite(first) ? E.serialToParts(first) : { y: r.lastFullMonth.year, m: r.lastFullMonth.month }, opts = [];
+    var yy = r.lastFullMonth.year, mm = r.lastFullMonth.month;
+    while (yy > fp.y || (yy === fp.y && mm >= fp.m)) { opts.push([yy, mm]); mm--; if (mm < 1) { mm = 12; yy--; } }
+    var H = { mois: { cols: [['D', 'Budget'], ['E', 'Réel'], ['F', 'Écart']], title: 'Le mois : ' + MONTHS_SHORT[B.month - 1] + ' ' + B.year },
+      cumul: { cols: [['G', 'Budget cumulé'], ['H', 'Réel cumulé'], ['I', 'Écart'], ['J', 'N-1 même période'], ['K', 'Évol. vs N-1']], title: 'Cumul janvier → ' + MONTHS_SHORT[B.month - 1] + ' ' + B.year },
+      annee: { cols: [['L', 'Rythme / mois (6 mois)'], ['M', 'Prévision fin d\'année'], ['N', 'Budget annuel'], ['O', 'Écart prévision'], ['P', 'Réel N-1']], title: 'Année ' + B.year + ' complète (' + b.rest + ' mois restants prévus)' } }[B.h];
+    var fmt = function (k, v) { if (v == null) return '<span class="muted">–</span>'; if (k === 'K') return '<span class="' + cls(v) + '">' + (v > 0 ? '+' : '') + pf.format(v) + '</span>'; if ('FIO'.indexOf(k) >= 0) return '<span class="' + cls(v) + '">' + signed(v) + '</span>'; return n0(v); };
+    var row = function (lab, o, extra, cl) { return '<tr' + (cl ? ' class="' + cl + '"' : '') + '><td class="sticky">' + lab + (extra || '') + '</td>' + H.cols.map(function (c) { return '<td class="n">' + fmt(c[0], o[c[0]]) + '</td>'; }).join('') + '</tr>'; };
+    var mtag = function (l) { return B.h === 'annee' ? ' <span class="tag">' + esc(l.method) + '</span>' : ''; };
+    var rows = '';
+    b.lines.filter(function (l) { return l.kind === 'rev'; }).forEach(function (l) { rows += row(esc(l.label), l, mtag(l)); });
+    rows += row('<b>Total revenus</b>', b.totalRev, '', 'total');
+    b.lines.filter(function (l) { return l.kind === 'dep'; }).forEach(function (l) { rows += row(esc(l.label), l, mtag(l)); });
+    rows += row('<b>Total dépenses</b>', b.totalDep, '', 'total');
+    rows += row('<b>Épargne</b>', b.savings, '', 'total');
+    rows += '<tr><td class="sticky">Taux d\'épargne</td>' + H.cols.map(function (c) { var v = b.savingsRate[c[0]]; return '<td class="n">' + (v == null ? '' : pf.format(v)) + '</td>'; }).join('') + '</tr>';
+    b.lines.filter(function (l) { return l.kind === 'inv'; }).forEach(function (l) { rows += row(esc(l.label) + ' <span class="small muted">(épargne placée)</span>', l, mtag(l)); });
+    var sv = b.savings, sr = b.savingsRate;
+    var html = '<div class="toolbar"><select id="bMonth">' + opts.map(function (o) { return '<option value="' + o[0] + '-' + o[1] + '"' + (o[0] === B.year && o[1] === B.month ? ' selected' : '') + '>' + MONTHS_SHORT[o[1] - 1] + ' ' + o[0] + '</option>'; }).join('') + '</select>' +
+      '<div class="seg" id="bH">' + [['mois', 'Mois'], ['cumul', 'Cumul'], ['annee', 'Année']].map(function (x) { return '<button type="button" data-v="' + x[0] + '"' + (B.h === x[0] ? ' class="on"' : '') + '>' + x[1] + '</button>'; }).join('') + '</div></div>';
+    html += '<div class="grid g4">' +
+      kpi('Épargne du mois', '<span class="' + cls(sv.E) + '">' + signed(sv.E) + '</span>', 'budget ' + n0(sv.D) + ' · taux ' + (sr.E == null ? '–' : pf.format(sr.E))) +
+      kpi('Épargne cumulée ' + B.year, '<span class="' + cls(sv.H) + '">' + signed(sv.H) + '</span>', 'budget ' + n0(sv.G) + ' · écart ' + signed(sv.I)) +
+      kpi('Prévision épargne ' + B.year, '<span class="' + cls(sv.M) + '">' + signed(sv.M) + '</span>', 'budget ' + n0(sv.N) + ' · taux ' + (sr.M == null ? '–' : pf.format(sr.M))) +
+      kpi('Dépenses prévues ' + B.year, ntd(b.totalDep.M), 'budget ' + n0(b.totalDep.N) + ' · écart ' + signed(b.totalDep.O)) + '</div>';
+    html += '<div class="card section"><div class="chart-head"><h2>' + H.title + '</h2><span class="small muted">Écart positif = favorable</span></div><div class="tablewrap"><table class="t"><thead><tr><th class="sticky">Poste</th>' + H.cols.map(function (c) { return '<th class="n">' + c[1] + '</th>'; }).join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<p class="small muted">Budgets issus de l\'onglet Situations (comme dans Excel). Impôts : régularisation N-1 budgétée en ' + MONTHS_SHORT[(d.config.taxMonth || 6) - 1] + '. Retenue à la source estimée sur le salaire (déjà déduite du net) : ' + n0((b.withholdingInfo[{ mois: 'E', cumul: 'H', annee: 'M' }[B.h]]) || 0) + ' NT$.</p></div>';
+    html += '<div class="card section"><h2>Épargne : budget vs réel / prévision</h2>' + legend([['Budget', css('--s1')], ['Réel / prévision', css('--s2')]]) + '<div class="chart"><canvas id="cBud"></canvas></div></div>';
+    $('#view-bud').innerHTML = html;
+    $('#bMonth').onchange = function (e) { var p = e.target.value.split('-'); B.year = +p[0]; B.month = +p[1]; renderBudget(); };
+    $$('#bH button').forEach(function (x) { x.onclick = function () { B.h = x.dataset.v; renderBudget(); }; });
+    chart('cBud', { type: 'bar', data: { labels: ['Mois', 'Cumul ' + B.year, 'Année (prév.)'], datasets: [barDs('Budget', [sv.D, sv.G, sv.N].map(Math.round), css('--s1')), barDs('Réel / prévision', [sv.E, sv.H, sv.M].map(Math.round), css('--s2'))] }, options: baseOpts() });
+  }
+
 
   // ---------- Patrimoine ----------
   function renderInv() {
@@ -549,7 +659,7 @@
     var html = '<div class="grid g4">' + kpi('Patrimoine total', ntd(r.netWorthNtd), eur(r.netWorthEur)) + kpi('Liquidités', ntd(r.liquidNtd), 'SCB + Richart + Compte FR') +
       kpi('Valeur des placements', ntd(r.platValueNtd), 'Investi ' + n0(r.platInvNtd)) + kpi('P&amp;L', '<span class="' + cls(r.plNtd) + '">' + signed(r.plNtd) + '</span>', r.platInvNtd ? pf.format(r.plNtd / r.platInvNtd) : '') + '</div>';
     html += '<div class="card section"><div class="chart-head"><h2>Plateformes d\'investissement</h2><span class="small muted">Saisissez la valeur affichée par vos applis</span></div><div class="tablewrap"><table class="t"><thead><tr><th class="sticky">Type</th><th class="n">Investi NT$</th><th>Valeur actuelle</th><th class="n">Valeur NT$</th><th class="n">P&amp;L NT$</th><th class="n">P&amp;L %</th></tr></thead><tbody>' +
-      r.platforms.map(function (p, i) { return '<tr><td class="sticky">' + esc(p.type) + (p.status !== 'OK' ? ' <span class="tag pend">À renseigner</span>' : '') + '</td><td class="n">' + n0(p.investedNtd) + '</td><td><div class="inline-edit"><input class="inp" inputmode="decimal" data-plat="' + i + '" value="' + (p.value == null ? '' : esc(String(p.value))) + '" placeholder="vide = investi">' + devSel('pd' + i, p.devise) + '</div></td><td class="n">' + n0(p.valueNtd) + '</td><td class="n ' + cls(p.plNtd) + '">' + signed(p.plNtd) + '</td><td class="n">' + (p.plPct == null ? '–' : pf.format(p.plPct)) + '</td></tr>'; }).join('') +
+      r.platforms.map(function (p, i) { return '<tr><td class="sticky">' + esc(p.type) + (p.status !== 'OK' ? ' <span class="tag pend">À renseigner</span>' : '') + '</td><td class="n">' + n0(p.investedNtd) + '</td><td>' + (p.locked ? '<span class="small muted">' + esc(p.note || 'Calculé dans le classeur') + '</span>' : '<div class="inline-edit"><input class="inp" inputmode="decimal" data-plat="' + i + '" value="' + (p.value == null ? '' : esc(String(p.value))) + '" placeholder="vide = investi">' + devSel('pd' + i, p.devise) + '</div>') + '</td><td class="n">' + n0(p.valueNtd) + '</td><td class="n ' + cls(p.plNtd) + '">' + signed(p.plNtd) + '</td><td class="n">' + (p.plPct == null ? '–' : pf.format(p.plPct)) + '</td></tr>'; }).join('') +
       '<tr class="total"><td class="sticky">Total</td><td class="n">' + n0(r.platInvNtd) + '</td><td></td><td class="n">' + n0(r.platValueNtd) + '</td><td class="n ' + cls(r.plNtd) + '">' + signed(r.plNtd) + '</td><td class="n">' + (r.platInvNtd ? pf.format(r.plNtd / r.platInvNtd) : '–') + '</td></tr></tbody></table></div></div>';
     html += '<div class="grid g2 stack-sm section"><div class="card"><h2>Liquidités</h2><table class="t"><tbody>' +
       r.liquid.map(function (l) { return '<tr><td>' + esc(l.name) + (l.manual ? '<div class="inline-edit" style="margin-top:6px"><input class="inp" inputmode="decimal" id="frVal" value="' + (d.fr.value == null ? '' : esc(String(d.fr.value))) + '">' + devSel('frDev', d.fr.devise) + '</div>' : '') + '</td><td class="n">' + n0(l.ntd) + '</td></tr>'; }).join('') +
@@ -564,7 +674,7 @@
 
     var upsertSimple = function (match, op) { var ops = state.ops.filter(function (o) { return !match(o); }); ops.push(op); setOps(ops); toast('Modification prête à être enregistrée'); };
     r.platforms.forEach(function (p, i) {
-      var inp = $('[data-plat="' + i + '"]'), sel = $('#pd' + i);
+      var inp = $('[data-plat="' + i + '"]'), sel = $('#pd' + i); if (!inp) return;
       var commit = function () {
         var raw = inp.value.trim(), val = raw === '' ? null : parseAmount(raw);
         if (raw !== '' && isNaN(val)) { toast('Valeur invalide'); return; }
@@ -606,6 +716,7 @@
     if (o.type === 'addInv') return 'Investissement : ' + d.type + ' · ' + n0(d.montant) + ' ' + d.devise + ' · ' + dstr(d.date);
     if (o.type === 'setPlatform') return 'Valeur actuelle ' + o.name + ' : ' + (o.value == null ? '(vide)' : n0(o.value) + ' ' + o.devise);
     if (o.type === 'setFR') return 'Compte FR : ' + (o.value == null ? '(vide)' : n0(o.value) + ' ' + o.devise);
+    if (o.type === 'addSnapshot') return 'Relevé du patrimoine au ' + dstr(o.data.date) + ' (taux ' + nf2.format(o.data.rate) + ')';
     if (o.type === 'setRate') return 'Taux de change : 1 € = ' + nf2.format(o.value) + ' NT$';
     return o.type;
   }

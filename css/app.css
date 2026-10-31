@@ -57,7 +57,7 @@ h3 { font-size: 13px; margin: 16px 0 8px; color: var(--ink-2); font-weight: 600;
 .banner.err { background: var(--neg-bg); }
 
 /* navigation : en bas sur mobile, a gauche sur grand ecran */
-.tabs { position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; display: grid; grid-template-columns: repeat(5, 1fr); background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+.tabs { position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; display: grid; grid-template-columns: repeat(6, 1fr); background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
 .tabs button { border: 0; background: transparent; padding: 8px 2px 9px; font-size: 11.5px; color: var(--ink-3); display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; }
 .tabs button .ti { display: block; }
 .tabs button.active { color: var(--brand); font-weight: 650; }
@@ -206,3 +206,16 @@ body.priv-demo .topbar::after { content: "Montants fictifs"; position: absolute;
 
 .recon { font-size: 13.5px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); margin-bottom: 4px; }
 .recon.ok { background: var(--pos-bg); } .recon.bad { background: var(--neg-bg); }
+
+.tag.cb { background: #fff2cc; color: #5a4300; }
+:root[data-theme="dark"] .tag.cb { background: #4a3d12; color: #f3e2a8; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tag.cb { background: #4a3d12; color: #f3e2a8; } }
+.cbbox { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 4px 0 8px; background: var(--surface-2); }
+@media (max-width: 420px) { .tabs button { font-size: 10.5px; } }
+
+.cyclist { display: flex; flex-direction: column; }
+.cyc { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.cyc-l { min-width: 0; flex: 1 1 150px; }
+.cyc-r { display: flex; align-items: center; gap: 10px; }
+.cyc-r .btn { padding: 6px 12px; font-size: 13.5px; }
+html, body { max-width: 100%; }
