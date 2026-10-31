@@ -328,10 +328,27 @@
     dlg('<h2>Dater ' + rows.length + ' ligne(s)</h2><p class="small muted">Même date de débit pour toutes les lignes sélectionnées (ex. prélèvement de la carte de crédit).</p>' +
       '<div class="chips">' + chip(a, 'Prélèvement CB ' + dstr(a)) + chip(b, 'Prélèvement CB ' + dstr(b)) + chip(today, 'Aujourd\'hui') + '</div>' +
       '<label class="f"><span>Date</span><input type="date" id="bdDate" value="' + dinput(a) + '"></label>' +
+      '<label class="f"><span>Montant débité par la banque (facultatif, pour vérifier)</span><input type="text" inputmode="decimal" id="bdBank" autocomplete="off" placeholder="ex. 42818"></label>' +
+      '<div id="bdCheck" class="recon"></div>' +
       '<div class="actions"><button type="button" class="btn" id="bdCancel">Annuler</button><button type="button" class="btn primary" id="bdOk">Appliquer</button></div>', function (f) {
       $$('.chipd', f).forEach(function (c) { c.onclick = function () { $('#bdDate', f).value = dinput(+c.dataset.d); $$('.chipd', f).forEach(function (x) { x.classList.toggle('primary', x === c); }); }; });
       $('#bdCancel', f).onclick = closeDlg;
+      var selNet = rows.reduce(function (s, t) { return s + t.debit - t.credit; }, 0);
+      var check = function () {
+        var bank = parseAmount($('#bdBank', f).value), box = $('#bdCheck', f);
+        if (isNaN(bank)) { box.innerHTML = '<span class="muted">Lignes sélectionnées : <b>' + n0(selNet) + '</b> NT$ à débiter</span>'; box.className = 'recon'; return; }
+        var diff = Math.round((Math.abs(bank) - selNet) * 100) / 100;
+        if (diff === 0) { box.className = 'recon ok'; box.innerHTML = '✓ Concorde : lignes ' + n0(selNet) + ' = banque ' + n0(Math.abs(bank)); return; }
+        var hint = state.data.tx.filter(function (t) { return t.pending && !t.deleted && Math.abs(t.debit - t.credit - Math.abs(diff)) < 0.5; });
+        box.className = 'recon bad';
+        box.innerHTML = '✕ Écart : banque ' + n0(Math.abs(bank)) + ' − lignes ' + n0(selNet) + ' = <b>' + signed(diff) + '</b>' +
+          (diff > 0 ? '<br><span class="small">La banque a débité plus : ligne oubliée, frais en devise, cotisation… ' : '<br><span class="small">Les lignes dépassent le relevé : une ligne appartient sans doute au cycle suivant, ou un remboursement manque. ') +
+          (hint.length ? 'Ligne(s) en attente de ce montant : ' + hint.slice(0, 3).map(function (t) { return esc(t.objet) + ' (' + n0(t.debit - t.credit) + ')' + (state.sel.has(String(t.row)) ? ' — sélectionnée' : ' — non sélectionnée'); }).join(', ') : '') + '</span>';
+      };
+      $('#bdBank', f).oninput = check; check();
       $('#bdOk', f).onclick = function () {
+        var bk = parseAmount($('#bdBank', f).value);
+        if (!isNaN(bk) && Math.round((Math.abs(bk) - selNet) * 100) !== 0 && !confirm('Le total ne correspond pas au montant de la banque. Dater quand même ?')) return;
         var d = fromInput($('#bdDate', f).value); if (d == null) return;
         var ops = state.ops.slice();
         rows.forEach(function (t) {

@@ -203,3 +203,6 @@ body.priv-demo .topbar::after { content: "Montants fictifs"; position: absolute;
 .sb-actions { display: flex; gap: 8px; } .sb-actions .btn { padding: 8px 14px; }
 @media (min-width: 900px) { .selbar { left: 200px; bottom: 0; } }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; } .chips .btn { padding: 8px 12px; font-size: 13.5px; }
+
+.recon { font-size: 13.5px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); margin-bottom: 4px; }
+.recon.ok { background: var(--pos-bg); } .recon.bad { background: var(--neg-bg); }
