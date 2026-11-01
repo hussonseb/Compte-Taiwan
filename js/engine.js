@@ -180,6 +180,8 @@
     config.jourPrelevement = await nameVal('JOUR_PRELEVEMENT', 9);
     config.taxMonth = /regularisation/i.test(str(cfg.get('J5'))) && typeof cfg.get('K5') === 'number' ? cfg.get('K5') : 6;
     config.hasCard = !!TC.carte;
+    config.bonusMonth = 1;
+    for (var rcf = 2; rcf < 60; rcf++) { if (/bonus/i.test(str(cfg.get('J' + rcf))) && typeof cfg.get('K' + rcf) === 'number') { config.bonusMonth = cfg.get('K' + rcf); break; } }
 
     var ic = await wb.cells('Investissements');
     var platforms = [];
@@ -304,7 +306,7 @@
     var C = data.config, rate = data.rate || 1;
     var cat = function (i, fallback) { return C.categories[i] || fallback; };
     var SAL = cat(0, 'Salaire'), BUS = cat(2, 'Business'), LOY = cat(3, 'Loyer'), GLF = cat(4, 'GuanLiFei'),
-      VQ = cat(5, 'Vie Quotidienne'), DF = cat(6, 'Depenses Fixes'), EXT = cat(7, 'Extras'), INV = cat(8, 'Investissements'),
+      BON = cat(1, 'Bonus'), VQ = cat(5, 'Vie Quotidienne'), DF = cat(6, 'Depenses Fixes'), EXT = cat(7, 'Extras'), INV = cat(8, 'Investissements'),
       IMP = cat(9, 'Impots'), TRF = 'Transfert';
     var k = C.withholding || 0, gross = k ? k / (1 - k) : 0;
     var rows = data.tx.filter(function (t) { return !t.empty; });
@@ -487,6 +489,11 @@
         var M = H + (b.method === 'Comme N-1' ? Pv - J : L * rest);
         var D_, G, N;
         if (eq(b.label, IMP)) { D_ = month === taxM ? Pv : 0; G = month >= taxM ? Pv : 0; N = Pv; }
+        else if (eq(b.label, BON) && b.budget != null && !opts.bonusMonthly) {
+          // Bonus verse en une fois (mois Config, janvier par defaut) : tout le budget annuel ce mois-la
+          var annual = b.budget * 12, bm = C.bonusMonth || 1;
+          D_ = month === bm ? annual : 0; G = month >= bm ? annual : 0; N = annual;
+        }
         else { D_ = b.budget; G = D_ == null ? null : D_ * month; N = D_ == null ? null : D_ * 12; }
         var fav = function (bud, real) { return bud == null ? null : (rev || inv ? real - bud : bud - real); };
         return { label: b.label, sens: b.sens, method: b.method, row: b.row, kind: rev ? 'rev' : inv ? 'inv' : 'dep',
