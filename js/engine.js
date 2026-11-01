@@ -222,6 +222,11 @@
           annual: isBlank(bc.get('N' + rb)) ? null : num(bc.get('N' + rb)) });
       }
     }
+    // Budget mensuel du compte famille (onglet Situations, scenario en colonne C)
+    if (budget && wb.sheets['Situations']) {
+      var sit = await wb.cells('Situations');
+      for (var rs = 2; rs < 40; rs++) { if (/compte (joint|famill?e)/i.test(str(sit.get('B' + rs))) && typeof sit.get('C' + rs) === 'number') { budget.family = { label: str(sit.get('B' + rs)), monthly: sit.get('C' + rs) }; break; } }
+    }
     // Historique patrimoine : tableau Snapshots
     var snaps = null, S = wb.tables.Snapshots;
     if (S) {
@@ -280,6 +285,13 @@
     var p = serialToParts(t.achat), jc = cfg.jourCloture || 20, jp = cfg.jourPrelevement || 9;
     var m = p.m + (p.d > jc ? 2 : 1), y = p.y; while (m > 12) { m -= 12; y++; }
     return partsToSerial(y, m, jp);
+  }
+  // Virement vers le compte famille : « Family account », « Compte famille », « Compte joint »… (hors Family Mart)
+  function isFamily(t) {
+    var o = lc(excelTrim(t.objet));
+    if (/mart/.test(o)) return false;
+    if (/(family|familly) account|compte (famill?e|joint)|joint account/.test(o)) return true;
+    return /^(famill?e|familly|family)$/.test(o) && t.debit >= 5000;
   }
   function serialToParts(s) { var d = new Date(Math.round((s - 25569) * 86400000)); return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() }; }
   function partsToSerial(y, m, d) { return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 86400000); }
@@ -479,8 +491,17 @@
       var B = data.budget; if (!B) return null;
       var cutoff = partsToSerial(year, month + 1, 1) - 1, m6 = month - 5, y6 = year; while (m6 < 1) { m6 += 12; y6--; }
       var winStart = partsToSerial(y6, m6, 1), rest = 12 - month, taxM = C.taxMonth || 6;
-      var lines = B.rows.map(function (b) {
-        var cats = /loyer/i.test(b.label) && /guanlifei/i.test(b.label) ? LOY_GLF : [b.label];
+      var rowsX = [];
+      B.rows.forEach(function (b) {
+        if (B.family && !opts.noFamilySplit && eq(b.label, VQ) && b.budget != null) {
+          rowsX.push(Object.assign({}, b, { budget: b.budget - B.family.monthly, pred: function (t) { return !isFamily(t); } }));
+          rowsX.push(Object.assign({}, b, { label: 'Compte famille', catLabel: b.label, budget: B.family.monthly, family: true, pred: isFamily }));
+        } else rowsX.push(b);
+      });
+      var lines = rowsX.map(function (b) {
+        var cats = /loyer/i.test(b.label) && /guanlifei/i.test(b.label) ? LOY_GLF : [b.catLabel || b.label];
+        var pr = b.pred || function () { return true; };
+        var sumNet0 = sumNet; sumNet = function (c, f) { return sumNet0(c, function (t) { return pr(t) && f(t); }); };
         var sg = b.sens === 'Revenu' ? 1 : -1, rev = b.sens === 'Revenu', inv = !rev && b.sens !== 'Depense';
         var E_ = sg * sumNet(cats, function (t) { return t.year === year && t.month === month; });
         var H = sg * sumNet(cats, function (t) { return t.year === year && t.month <= month; });
@@ -497,8 +518,9 @@
           D_ = month === bm ? annual : 0; G = month >= bm ? annual : 0; N = annual;
         }
         else { D_ = b.budget; G = D_ == null ? null : D_ * month; N = D_ == null ? null : D_ * 12; }
+        sumNet = sumNet0;
         var fav = function (bud, real) { return bud == null ? null : (rev || inv ? real - bud : bud - real); };
-        return { label: b.label, sens: b.sens, method: b.method, row: b.row, kind: rev ? 'rev' : inv ? 'inv' : 'dep',
+        return { label: b.label, sens: b.sens, method: b.method, row: b.row, family: !!b.family, kind: rev ? 'rev' : inv ? 'inv' : 'dep',
           D: D_, E: E_, F: fav(D_, E_), G: G, H: H, I: fav(G, H), J: J, K: J ? H / J - 1 : null, L: L, M: M, N: N, O: fav(N, M), P: Pv };
       });
       var KEYS = ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'L', 'M', 'N', 'O', 'P'];
@@ -556,7 +578,7 @@
     return { wb: wb, data: data };
   }
 
-  var api = { prevu: prevu, load: load, openWorkbook: openWorkbook, extract: extract, enrich: enrich, compute: compute, categorize: categorize,
+  var api = { isFamily: isFamily, prevu: prevu, load: load, openWorkbook: openWorkbook, extract: extract, enrich: enrich, compute: compute, categorize: categorize,
     buildLearned: buildLearned, excelTrim: excelTrim, serialToParts: serialToParts, partsToSerial: partsToSerial, todaySerial: todaySerial,
     decodeXml: decodeXml, colToNum: colToNum, numToCol: numToCol, parseRange: parseRange, parseCells: parseCells };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FinEngine = api;
