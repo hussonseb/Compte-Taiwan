@@ -218,7 +218,8 @@
       for (var rb = 12; rb <= 30; rb++) {
         var lab = str(bc.get('A' + rb)), sens = str(bc.get('B' + rb));
         if (!lab || !sens) continue;
-        budget.rows.push({ row: rb, label: lab, sens: sens, method: str(bc.get('C' + rb)) || 'Rythme 6 mois', budget: isBlank(bc.get('D' + rb)) ? null : num(bc.get('D' + rb)) });
+        budget.rows.push({ row: rb, label: lab, sens: sens, method: str(bc.get('C' + rb)) || 'Rythme 6 mois', budget: isBlank(bc.get('D' + rb)) ? null : num(bc.get('D' + rb)),
+          annual: isBlank(bc.get('N' + rb)) ? null : num(bc.get('N' + rb)) });
       }
     }
     // Historique patrimoine : tableau Snapshots
@@ -489,9 +490,10 @@
         var M = H + (b.method === 'Comme N-1' ? Pv - J : L * rest);
         var D_, G, N;
         if (eq(b.label, IMP)) { D_ = month === taxM ? Pv : 0; G = month >= taxM ? Pv : 0; N = Pv; }
-        else if (eq(b.label, BON) && b.budget != null && !opts.bonusMonthly) {
-          // Bonus verse en une fois (mois Config, janvier par defaut) : tout le budget annuel ce mois-la
-          var annual = b.budget * 12, bm = C.bonusMonth || 1;
+        else if (eq(b.label, BON) && (b.annual != null || b.budget != null) && !opts.bonusMonthly) {
+          // Bonus verse en une fois (mois Config, janvier par defaut) : tout le budget annuel ce mois-la.
+          // Budget annuel lu en colonne N (= Situations!C17), valable que D13 soit mensualise (V3) ou ponctuel (V4).
+          var annual = b.annual != null ? b.annual : b.budget * 12, bm = C.bonusMonth || 1;
           D_ = month === bm ? annual : 0; G = month >= bm ? annual : 0; N = annual;
         }
         else { D_ = b.budget; G = D_ == null ? null : D_ * month; N = D_ == null ? null : D_ * 12; }
