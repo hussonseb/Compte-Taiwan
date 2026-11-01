@@ -289,3 +289,11 @@ table.t.compact td:last-child, table.t.compact th:last-child { padding-right: 0;
 .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 2px 0; color: var(--ink-2); }
 .kv > span:last-child { color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
 .kv > span:first-child { flex: 0 1 auto; }
+
+/* PC : utiliser toute la largeur, tableaux larges sans defilement */
+@media (min-width: 900px) {
+  main { max-width: none; }
+  .tablewrap table.t th { white-space: normal; vertical-align: bottom; line-height: 1.2; }
+  .tablewrap table.t th, .tablewrap table.t td { padding: 7px 7px; }
+}
+@media (min-width: 900px) and (max-width: 1399px) { .tablewrap table.t { font-size: 12.5px; } .tablewrap table.t th, .tablewrap table.t td { padding: 6px 5px; } }
