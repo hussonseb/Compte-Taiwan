@@ -632,7 +632,7 @@
   // Liste budget pour petit ecran : chaque poste = montant, barre, puis lignes libellees (une info par ligne)
   function budList(b, h) {
     var K = { mois: { r: 'E', b: 'D', e: 'F', rl: 'Réel du mois', bl: 'Budget du mois' }, cumul: { r: 'H', b: 'G', e: 'I', rl: 'Réel cumulé', bl: 'Budget cumulé' }, annee: { r: 'M', b: 'N', e: 'O', rl: 'Prévision fin d\'année', bl: 'Budget annuel' } }[h];
-    var py = b.year - 1, per = 'Janv.–' + MONTHS_SHORT[b.month - 1] + ' ' + py;
+    var py = b.year - 1, per = (b.month === 1 ? '' : 'Janv.–') + MONTHS_SHORT[b.month - 1] + ' ' + py;
     var kv = function (k, v) { return '<div class="kv"><span>' + k + '</span><span>' + v + '</span></div>'; };
     var item = function (l, o, strong, kind) {
       kind = kind || o.kind;
