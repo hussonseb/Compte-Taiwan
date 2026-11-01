@@ -430,7 +430,7 @@
       var vEur = p.value === null ? investedEur : (p.devise === 'EUR' ? p.value : p.value / rate);
       return { type: p.type, row: p.row, investedNtd: investedNtd, investedEur: investedEur, value: p.value, devise: p.devise,
         valueNtd: vNtd, valueEur: vEur, plNtd: vNtd - investedNtd, plEur: vEur - investedEur,
-        plPct: p.value === null || !investedNtd ? null : (vNtd - investedNtd) / investedNtd, status: p.value === null ? 'A renseigner' : 'OK', start: p.start };
+        plPct: p.value === null || !investedNtd ? null : (vNtd - investedNtd) / investedNtd, status: p.value === null ? 'A renseigner' : 'OK', start: p.start, locked: !!p.locked, note: p.note || '' };
     });
     var others = data.others.map(function (o) {
       var n = 0, e = 0; invRows.forEach(function (x) { if (eq(x.type, o)) { n += x.ntd; e += x.eur; } });

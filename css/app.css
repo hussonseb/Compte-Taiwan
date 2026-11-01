@@ -64,7 +64,7 @@ h3 { font-size: 13px; margin: 16px 0 8px; color: var(--ink-2); font-weight: 600;
 .tabs[hidden] { display: none; }
 main { padding: 14px 16px 96px; max-width: 1180px; margin: 0 auto; }
 @media (min-width: 900px) {
-  #app { display: grid; grid-template-columns: 200px 1fr; grid-template-rows: auto auto 1fr; }
+  #app { display: grid; grid-template-columns: 200px minmax(0, 1fr); grid-template-rows: auto auto 1fr; }
   .topbar { grid-column: 1 / -1; }
   .banner { grid-column: 1 / -1; }
   .tabs { position: sticky; top: 64px; grid-row: 3; align-self: start; display: flex; flex-direction: column; border: 0; background: transparent; padding: 16px 10px; gap: 2px; }
@@ -219,3 +219,63 @@ body.priv-demo .topbar::after { content: "Montants fictifs"; position: absolute;
 .cyc-r { display: flex; align-items: center; gap: 10px; }
 .cyc-r .btn { padding: 6px 12px; font-size: 13.5px; }
 html, body { max-width: 100%; }
+
+/* ===== Mise en page responsive (reference telephone : Galaxy S24+, 384 x 832) ===== */
+.only-phone { display: none; }
+@media (max-width: 699px) { .only-desk { display: none !important; } .only-phone { display: block; } }
+.alert { background: var(--neg-bg); border-color: transparent; margin-bottom: 12px; }
+.alert ul { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; }
+/* resume de l'accueil */
+.grid.sum { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-areas: "hero hero acc acc" "pl bil acc acc"; }
+.grid.sum .hero { grid-area: hero; } .grid.sum .accts { grid-area: acc; }
+.grid.sum > .kpi:nth-child(2) { grid-area: pl; } .grid.sum > .kpi:nth-child(3) { grid-area: bil; }
+.alert + .grid.sum > .kpi:nth-child(2) { grid-area: pl; }
+@media (max-width: 699px) { .grid.sum { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "hero hero" "pl bil" "acc acc"; } }
+.accts { padding: 10px 14px; }
+.acc-foot { margin-top: 8px; }
+table.t.compact th, table.t.compact td { padding: 6px 6px; font-size: 13px; }
+table.t.compact td:first-child, table.t.compact th:first-child { padding-left: 0; }
+table.t.compact td:last-child, table.t.compact th:last-child { padding-right: 0; }
+/* puces de mois defilantes */
+.seg-scroll { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.seg-scroll::-webkit-scrollbar { display: none; }
+.seg-scroll button { flex: 0 0 auto; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.seg-scroll button.on { background: var(--brand); color: var(--brand-ink); border-color: transparent; font-weight: 600; }
+/* budget en liste */
+.budlist h3 { margin: 14px 0 4px; }
+.bl-head { margin-top: 2px; }
+.bi { padding: 9px 0; border-bottom: 1px solid var(--line); }
+.bi-h { display: flex; justify-content: space-between; gap: 10px; font-size: 14.5px; }
+.bi-h .num { font-weight: 650; white-space: nowrap; }
+.bi.strong .bi-h { font-weight: 700; }
+.bi-s { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; }
+.bar { position: relative; height: 6px; border-radius: 3px; background: var(--surface-2); margin-top: 6px; overflow: hidden; }
+.bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--pos); border-radius: 3px; }
+.bar.bad i { background: var(--neg); }
+.bar em { position: absolute; right: 0; top: 0; bottom: 0; width: 3px; background: var(--ink); }
+/* lignes a deux colonnes (releves, mouvements) */
+.li2 { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.li2 .r { text-align: right; white-space: nowrap; }
+/* plateformes */
+.plat { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 1fr); gap: 6px 14px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.plat .pl-n { grid-area: auto; } .plat .pl-v { text-align: right; }
+.plat.total { border-bottom: 0; border-top: 2px solid var(--line); }
+@media (max-width: 699px) {
+  .plat { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "n v" "in in"; }
+  .plat .pl-n { grid-area: n; } .plat .pl-v { grid-area: v; } .plat .pl-in { grid-area: in; }
+  .plat .pl-in:empty { display: none; }
+  .inline-edit input { flex: 1; width: auto; }
+  .chart { height: 220px; }
+  .kpi .v { font-size: 18px; }
+  .kpi.hero .v { font-size: 25px; }
+  main { padding: 12px 12px 96px; }
+  .card { padding: 12px; }
+  h2 { font-size: 14.5px; }
+  .toolbar .seg button { padding: 8px 10px; }
+}
+.cyc .btn { padding: 6px 12px; font-size: 13.5px; }
+
+.inline-edit { max-width: 260px; }
+.inline-edit input.inp { min-width: 0; width: 100%; flex: 1 1 auto; }
+.inline-edit select { flex: 0 0 74px; }
+.inline-edit span { white-space: nowrap; }

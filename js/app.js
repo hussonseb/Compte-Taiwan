@@ -44,10 +44,10 @@
     document.body.classList.toggle('priv-demo', privacy.mode === 'demo');
     var b = $('#btnPriv'); if (b) { b.textContent = privacy.mode === 'off' ? '👁' : privacy.mode === 'blur' ? 'Flou' : 'Démo'; b.classList.toggle('accent', privacy.mode !== 'off'); }
   }
-  function n0(v) { if (v != null && !isNaN(v)) v = v * pk(); return v == null || isNaN(v) ? '–' : nf0.format(Math.round(v)).replace(/ /g, ' '); }
+  function n0(v) { if (v != null && !isNaN(v)) { v = v * pk(); if (Math.round(v) === 0) v = 0; } return v == null || isNaN(v) ? '–' : nf0.format(Math.round(v)).replace(/ /g, ' '); }
   function ntd(v) { return n0(v) + ' NT$'; }
   function eur(v) { return n0(v) + ' €'; }
-  function signed(v) { return (v > 0 ? '+' : '') + n0(v); }
+  function signed(v) { return (Math.round(v * pk()) > 0 ? '+' : '') + n0(v); }
   function cls(v) { return v > 0 ? 'pos' : v < 0 ? 'neg' : ''; }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function dstr(serial) { if (serial == null) return ''; var p = E.serialToParts(serial); return String(p.d).padStart(2, '0') + '/' + String(p.m).padStart(2, '0') + '/' + p.y; }
@@ -252,47 +252,51 @@
     var pend = r.pendingRows;
     var ok1 = Math.abs(r.controls.transfersInternal) < 0.5, ok2 = Math.abs(r.controls.ecart) < 0.5;
     var html = '';
-    html += '<div class="grid g4">';
-    html += '<div class="card kpi hero" style="grid-column:span 2"><div class="l">Patrimoine total</div><div class="v">' + ntd(r.netWorthNtd) + '</div><div class="s">' + eur(r.netWorthEur) + ' · 1 € = ' + nf2.format(r.rate) + ' NT$</div></div>';
-    html += '<div class="card kpi"><div class="l">P&amp;L investissements</div><div class="v ' + cls(r.plNtd) + '">' + signed(r.plNtd) + '</div><div class="s">' + (r.platInvNtd ? pf.format(r.plNtd / r.platInvNtd) : '') + ' sur ' + n0(r.platInvNtd) + ' investis</div></div>';
-    html += '<div class="card kpi"><div class="l">Bilan ' + y + ' (comptes TW)</div><div class="v ' + cls(ann.bilan) + '">' + signed(ann.bilan || 0) + '</div><div class="s">Taux d\'épargne ' + (ann.tauxEpargne == null ? '–' : pf.format(ann.tauxEpargne)) + ' · réel ' + (ann.tauxReel == null ? '–' : pf.format(ann.tauxReel)) + '</div></div>';
+    // Controles : uniquement en cas d'anomalie
+    if (!ok1 || !ok2) {
+      html += '<div class="card alert"><b>⚠ Contrôle de cohérence à vérifier</b><ul>' +
+        (!ok1 ? '<li>Transferts internes SCB / Richart / Taishin : <b>' + signed(r.controls.transfersInternal) + '</b> (doit être 0) — un virement n\'a qu\'un seul côté saisi.</li>' : '') +
+        (!ok2 ? '<li>Écart avec le total des comptes : <b>' + signed(r.controls.ecart) + '</b> (doit être 0).</li>' : '') + '</ul></div>';
+    }
+    // 1. Resume
+    html += '<div class="grid sum">';
+    html += '<div class="card kpi hero"><div class="l">Patrimoine total</div><div class="v">' + ntd(r.netWorthNtd) + '</div><div class="s">' + eur(r.netWorthEur) + ' · 1 € = ' + nf2.format(r.rate) + ' NT$</div></div>';
+    html += '<div class="card kpi"><div class="l">P&amp;L placements</div><div class="v ' + cls(r.plNtd) + '">' + signed(r.plNtd) + '</div><div class="s">' + (r.platInvNtd ? pf.format(r.plNtd / r.platInvNtd) : '') + ' sur ' + nfc.format(r.platInvNtd * pk()) + '</div></div>';
+    html += '<div class="card kpi"><div class="l">Bilan ' + y + '</div><div class="v ' + cls(ann.bilan) + '">' + signed(ann.bilan || 0) + '</div><div class="s">Épargne réelle ' + (ann.tauxReel == null ? '–' : pf.format(ann.tauxReel)) + '</div></div>';
+    html += '<div class="card accts"><table class="t compact"><thead><tr><th>Comptes</th><th class="n">Solde</th><th class="n">Appli</th></tr></thead><tbody>' +
+      comptes.map(function (c) { return '<tr><td>' + esc(c) + '</td><td class="n">' + n0(bal[c].all) + '</td><td class="n muted">' + n0(bal[c].all - bal[c].pending) + '</td></tr>'; }).join('') +
+      '<tr class="total"><td>Total</td><td class="n">' + n0(r.tracked) + '</td><td class="n">' + n0(r.tracked - r.pendingTotal) + '</td></tr></tbody></table>' +
+      '<div class="small muted acc-foot">En attente : <b class="' + cls(r.pendingTotal) + '">' + n0(r.pendingTotal) + '</b> · ' + pend.length + ' ligne(s)' + (C.hasCard && r.cb.count ? ' dont CB ' + n0(r.cb.pendingTotal) : '') + '</div></div>';
     html += '</div>';
 
-    html += '<div class="grid g4 section">';
-    comptes.forEach(function (c) {
-      html += '<div class="card kpi"><div class="l">Solde ' + esc(c) + '</div><div class="v">' + n0(bal[c].all) + '</div><div class="s">Appli : ' + n0(bal[c].all - bal[c].pending) + '</div></div>';
-    });
-    html += '<div class="card kpi"><div class="l">Total des comptes</div><div class="v">' + n0(r.tracked) + '</div><div class="s">Appli : ' + n0(r.tracked - r.pendingTotal) + '</div></div>';
-    html += '<div class="card kpi"><div class="l">En attente (sans date)</div><div class="v ' + cls(r.pendingTotal) + '">' + n0(r.pendingTotal) + '</div><div class="s">' + pend.length + ' ligne(s)</div></div>';
+    // 2. Les deux graphiques
+    html += '<div class="grid g2 stack-sm section">';
+    html += '<div class="card"><div class="chart-head"><h2>Revenus et dépenses ' + y + '</h2></div>' + legend([['Revenus', css('--s1')], ['Dépenses', css('--s2')]]) + '<div class="chart"><canvas id="cMonthly"></canvas></div><p class="small muted">Hors virements, investissements et business.</p></div>';
+    html += '<div class="card"><h2>Dépenses – 12 derniers mois</h2>' + legend([['Loyer + GLF', css('--s1')], ['Vie quot. + fixes', css('--s2')], ['Extras', css('--s3')]]) + '<div class="chart"><canvas id="cRolling"></canvas></div></div>';
     html += '</div>';
 
-    html += '<div class="card section"><div class="chart-head"><h2>Contrôles de cohérence</h2><span class="small muted">Taux mis à jour le ' + (d.rateDate ? dstr(d.rateDate) : '–') + '</span></div><div class="checks">' +
-      '<span class="chk ' + (ok1 ? '' : 'bad') + '">' + (ok1 ? '✓' : '✕') + ' Transferts internes : <b>' + n0(r.controls.transfersInternal) + '</b></span>' +
-      '<span class="chk ' + (ok2 ? '' : 'bad') + '">' + (ok2 ? '✓' : '✕') + ' Écart avec le total des comptes : <b>' + n0(r.controls.ecart) + '</b></span>' +
-      '<span class="chk" style="background:var(--surface-2)">Flux Mega : <b>' + n0(r.controls.mega) + '</b></span></div></div>';
-
+    // 3. Carte de credit puis lignes en attente
+    html += '<div class="grid g2 stack-sm section">';
     if (C.hasCard && r.cb.count) {
-      html += '<div class="card section"><div class="chart-head"><h2>Carte de crédit – à prélever</h2><span class="small muted">' + r.cb.count + ' ligne(s) · <b>' + n0(-r.cb.pendingTotal) + '</b> NT$</span></div><div class="cyclist">' +
+      html += '<div class="card"><div class="chart-head"><h2>Carte de crédit à prélever</h2><span class="small muted"><b>' + n0(-r.cb.pendingTotal) + '</b></span></div><div class="cyclist">' +
         r.cb.cycles.map(function (c, i) {
-          var lbl = c.prevu != null ? 'Prélèvement du <b>' + dstr(c.prevu) + '</b>' : 'Sans date d\'achat (historique)';
-          return '<div class="cyc"><div class="cyc-l">' + lbl + '<div class="small muted">' + c.rows.length + ' ligne(s)</div></div><div class="cyc-r"><b class="num">' + n0(c.total) + '</b><button type="button" class="btn" data-cyc="' + i + '">Rapprocher…</button></div></div>';
-        }).join('') + '</div><p class="small muted">« Rapprocher » sélectionne les lignes du relevé, vérifie le total contre le montant débité par la banque, puis les date au jour du prélèvement.</p></div>';
+          var lbl = c.prevu != null ? 'Prélèvement du <b>' + dstr(c.prevu) + '</b>' : 'Sans date d\'achat';
+          return '<div class="cyc"><div class="cyc-l">' + lbl + '<div class="small muted">' + c.rows.length + ' ligne(s) · <b>' + n0(c.total) + '</b></div></div><button type="button" class="btn" data-cyc="' + i + '">Rapprocher</button></div>';
+        }).join('') + '</div></div>';
     }
     if (pend.length) {
-      html += '<div class="card section"><div class="chart-head"><h2>Lignes en attente</h2><button class="linkbtn" data-goto-pending>Tout voir</button></div><ul class="txlist">' +
-        pend.slice(0, 5).map(txItem).join('') + '</ul></div>';
+      html += '<div class="card"><div class="chart-head"><h2>Lignes en attente</h2><button class="linkbtn" data-goto-pending>Tout voir (' + pend.length + ')</button></div><ul class="txlist">' +
+        pend.slice(0, 4).map(txItem).join('') + '</ul></div>';
     }
-
-    html += '<div class="grid gw section">';
-    html += '<div class="card"><div class="chart-head"><h2>Revenus et dépenses par mois – ' + y + '</h2></div>' + legend([['Revenus', css('--s1')], ['Dépenses', css('--s2')]]) + '<div class="chart"><canvas id="cMonthly"></canvas></div><p class="small muted">Hors virements internes, investissements et business ; revenus et impôts majorés de la retenue à la source estimée (' + pf.format(C.withholding) + ').</p></div>';
-    html += '<div class="card"><h2>Dépenses – 12 derniers mois</h2>' + legend([['Loyer + GuanLiFei', css('--s1')], ['Vie quotidienne + fixes', css('--s2')], ['Extras', css('--s3')]]) + '<div class="chart"><canvas id="cRolling"></canvas></div></div>';
     html += '</div>';
     $('#view-dash').innerHTML = html;
 
-    var m = r.monthly(y);
-    chart('cMonthly', { type: 'bar', data: { labels: MONTHS_SHORT, datasets: [barDs('Revenus', m.map(function (x) { return Math.round(x.revenus); }), css('--s1')), barDs('Dépenses', m.map(function (x) { return Math.round(x.depenses); }), css('--s2'))] }, options: baseOpts() });
+    var m = r.monthly(y), mo = baseOpts();
+    var lastM = 12; while (lastM > 1 && !m[lastM - 1].revenus && !m[lastM - 1].depenses) lastM--; // pas de mois vides en fin d'annee
+    chart('cMonthly', { type: 'bar', data: { labels: MONTHS_SHORT.slice(0, lastM), datasets: [barDs('Revenus', m.slice(0, lastM).map(function (x) { return Math.round(x.revenus); }), css('--s1')), barDs('Dépenses', m.slice(0, lastM).map(function (x) { return Math.round(x.depenses); }), css('--s2'))] }, options: mo });
     var ro = r.rolling, so = baseOpts();
     so.scales.x.stacked = true; so.scales.y.stacked = true;
+    so.plugins.tooltip.callbacks.footer = function (items) { var s = 0; items.forEach(function (i) { s += i.parsed.y; }); return 'Total : ' + n0(s); };
     chart('cRolling', { type: 'bar', data: { labels: ro.map(function (x) { return MONTHS_SHORT[x.month - 1] + (x.month === 1 ? ' ' + String(x.year).slice(2) : ''); }), datasets: [barDs('Loyer + GuanLiFei', ro.map(function (x) { return x.loyerGlf; }), css('--s1'), true), barDs('Vie quotidienne + fixes', ro.map(function (x) { return x.vqDf; }), css('--s2'), true), barDs('Extras', ro.map(function (x) { return x.extras; }), css('--s3'), true)] }, options: so });
     bindTxItems($('#view-dash'));
     $$('[data-cyc]').forEach(function (b) { b.onclick = function () { reconcileCycle(r.cb.cycles[+b.dataset.cyc]); }; });
@@ -530,7 +534,7 @@
       kpi('Dépenses', ntd(ann.depenses), 'hors invest. et business') +
       kpi('Bilan (comptes TW)', '<span class="' + cls(ann.bilan) + '">' + signed(ann.bilan || 0) + '</span>', 'Taux d\'épargne ' + (ann.tauxEpargne == null ? '–' : pf.format(ann.tauxEpargne))) +
       kpi('Investissements', ntd(ann.investissements), 'Impôts ' + n0(ann.impots)) + '</div>';
-    html += '<div class="card section"><div class="chart-head"><h2>Onglet ' + y + (cpt !== '*' ? ' – ' + esc(cpt) : '') + ' : net par catégorie et par mois</h2><span class="small muted">Touchez un montant pour voir les lignes</span></div><div class="tablewrap"><table class="t"><thead><tr><th class="sticky">Catégorie</th>' +
+    html += '<div class="card section"><div class="chart-head"><h2>Onglet ' + y + (cpt !== '*' ? ' – ' + esc(cpt) : '') + '</h2><span class="small muted">Touchez un montant pour voir les lignes</span></div><div class="tablewrap only-desk"><table class="t"><thead><tr><th class="sticky">Catégorie</th>' +
       months.map(function (m, i) { return '<th class="n">' + MONTHS_SHORT[i] + '</th>'; }).join('') + '<th class="n">Total</th></tr></thead><tbody>';
     ys.categories.forEach(function (c, ci) {
       html += '<tr><td class="sticky">' + esc(c) + '</td>';
@@ -539,20 +543,32 @@
     });
     var mt = []; for (var i = 0; i < 12; i++) { var s = 0; ys.categories.forEach(function (c) { s += ys.matrix[c][i].credit - ys.matrix[c][i].debit; }); mt.push(s); }
     html += '<tr class="total"><td class="sticky">Bilan</td>' + mt.map(function (v) { return '<td class="n ' + cls(v) + '">' + (v ? n0(v) : '·') + '</td>'; }).join('') + '<td class="n ' + cls(ys.bilan) + '">' + n0(ys.bilan) + '</td></tr>';
-    html += '</tbody></table></div><p class="small muted">Comme les onglets annuels : virements internes exclus ; le total « Salaire » ne compte que les crédits.</p></div>';
+    html += '</tbody></table></div>';
+    var cyNow = E.serialToParts(r.today);
+    var lastData = 0; ys.categories.forEach(function (c) { ys.matrix[c].forEach(function (x, i) { if ((x.credit || x.debit) && i + 1 > lastData) lastData = i + 1; }); });
+    var ym = state.yearMonth != null ? state.yearMonth : (lastData || (y === cyNow.y ? cyNow.m : 12));
+    html += '<div class="only-phone"><div class="seg-scroll" id="yMon">' + MONTHS_SHORT.map(function (mn, i) { return '<button type="button" data-m="' + (i + 1) + '"' + (ym === i + 1 ? ' class="on"' : '') + '>' + mn + '</button>'; }).join('') + '</div>' +
+      '<table class="t compact"><thead><tr><th>Catégorie</th><th class="n">' + MONTHS_SHORT[ym - 1] + '</th><th class="n">Année</th></tr></thead><tbody>' +
+      ys.categories.map(function (c) { var x = ys.matrix[c][ym - 1], v = x.credit - x.debit; return '<tr><td>' + esc(c) + '</td><td class="n ' + (v ? cls(v) : 'zero') + '" data-cat="' + esc(c) + '" data-m="' + ym + '">' + (v ? n0(v) : '·') + '</td><td class="n"><b>' + n0(ys.totals[c]) + '</b></td></tr>'; }).join('') +
+      '<tr class="total"><td>Bilan</td><td class="n ' + cls(mt[ym - 1]) + '">' + n0(mt[ym - 1]) + '</td><td class="n ' + cls(ys.bilan) + '">' + n0(ys.bilan) + '</td></tr></tbody></table></div>';
+    html += '<p class="small muted">Comme les onglets annuels : virements internes exclus ; le total « Salaire » ne compte que les crédits.</p></div>';
     // depenses par categorie
     var spend = {}; d.tx.forEach(function (t) { if (t.year !== y || t.cat === 'Transfert' || !t.debit) return; if (cpt !== '*' && t.compte !== cpt) return; spend[t.cat] = (spend[t.cat] || 0) + t.debit; });
     var sp = Object.keys(spend).map(function (k) { return [k, spend[k]]; }).sort(function (a, b) { return b[1] - a[1]; });
     html += '<div class="card section"><h2>Débits par catégorie – ' + y + '</h2><div class="chart" style="height:' + Math.max(160, sp.length * 30 + 40) + 'px"><canvas id="cCat"></canvas></div></div>';
     $('#view-year').innerHTML = html;
-    $('#ySel').onchange = function (e) { state.year = +e.target.value; renderYear(); };
+    $('#ySel').onchange = function (e) { state.year = +e.target.value; state.yearMonth = null; renderYear(); };
     $$('#yCpt button').forEach(function (b) { b.onclick = function () { state.yearCompte = b.dataset.v; renderYear(); }; });
+    $$('#yMon button').forEach(function (b) { b.onclick = function () { state.yearMonth = +b.dataset.m; renderYear(); }; });
+    var onb = $('#yMon .on'); if (onb) onb.scrollIntoView({ block: 'nearest', inline: 'center' });
     $$('#view-year td[data-cat]').forEach(function (td) { td.onclick = function () { state.txFilter = { q: '', compte: cpt === '*' ? '' : cpt, cat: td.dataset.cat, year: String(y), month: +td.dataset.m, pending: false, limit: 80 }; show('tx'); }; });
     var o = baseOpts({ indexAxis: 'y' }); o.scales = { x: { grid: { color: css('--grid') }, border: { display: false }, ticks: { color: css('--ink-3'), callback: function (v) { return nfc.format(v * pk()); } } }, y: { grid: { display: false }, ticks: { color: css('--ink-2') } } };
     o.interaction = { mode: 'nearest', axis: 'y', intersect: false };
     o.plugins.tooltip.callbacks.label = function (c) { return ' ' + n0(c.parsed.x) + ' NT$'; };
     chart('cCat', { type: 'bar', data: { labels: sp.map(function (x) { return x[0]; }), datasets: [Object.assign(barDs('Débits', sp.map(function (x) { return x[1]; }), css('--s1')), { borderSkipped: 'start' })] }, options: o });
   }
+  function pctOk(v) { return v == null || !isFinite(v) || Math.abs(v) > 1.5 ? '–' : pf.format(v); }
+  function nc(v) { return v == null || isNaN(v) ? '–' : nfc.format(v * pk()); }
   function kpi(l, v, s) { return '<div class="card kpi"><div class="l">' + l + '</div><div class="v">' + v + '</div>' + (s ? '<div class="s">' + s + '</div>' : '') + '</div>'; }
 
   // ---------- Historique ----------
@@ -563,7 +579,8 @@
     var types = ['Comptes TW'].concat(r.platforms.map(function (p) { return p.type; })).concat(['Compte FR']);
     var cols = ['--s1', '--s2', '--s3', '--s4', '--s5', '--s6', '--s7', '--s8'].map(css);
     html += '<div class="card section"><h2>Évolution du patrimoine (soldes et montants investis, au 31/12)</h2>' + legend(types.map(function (t, i) { return [t, cols[i % 8]]; })) + '<div class="chart tall"><canvas id="cWealth"></canvas></div><p class="small muted">Montants investis (pas la valeur de marché), comme l\'onglet Analysis. L\'année en cours inclut les lignes en attente et le Compte FR.</p></div>';
-    html += '<div class="card section"><h2>Bilan par année</h2><div class="tablewrap"><table class="t"><thead><tr><th class="sticky">Année</th><th class="n">Revenus</th><th class="n">Dépenses</th><th class="n">Bilan</th><th class="n">Taux d\'épargne</th><th class="n">Épargne réelle</th><th class="n">Taux réel</th><th class="n">Épargne cumulée</th><th class="n">Investissements</th><th class="n">Impôts</th><th class="n">Loyer+GLF</th><th class="n">Vie quot.</th><th class="n">Extras</th><th class="n">Business net</th></tr></thead><tbody>' +
+    html += '<div class="card section"><h2>Bilan par année</h2><div class="only-phone"><table class="t compact"><thead><tr><th>Année</th><th class="n">Revenus</th><th class="n">Dépenses</th><th class="n">Bilan</th><th class="n">Ép. réelle</th></tr></thead><tbody>' +
+      a.slice().reverse().map(function (y) { return '<tr class="click" data-y="' + y.year + '"><td><b>' + y.year + '</b></td><td class="n">' + nc(y.revenus) + '</td><td class="n">' + nc(y.depenses) + '</td><td class="n ' + cls(y.bilan) + '">' + nc(y.bilan) + '</td><td class="n">' + pctOk(y.tauxReel) + '</td></tr>'; }).join('') + '</tbody></table><p class="small muted">Touchez une année pour le détail. Tableau complet sur grand écran.</p></div><div class="tablewrap only-desk"><table class="t"><thead><tr><th class="sticky">Année</th><th class="n">Revenus</th><th class="n">Dépenses</th><th class="n">Bilan</th><th class="n">Taux d\'épargne</th><th class="n">Épargne réelle</th><th class="n">Taux réel</th><th class="n">Épargne cumulée</th><th class="n">Investissements</th><th class="n">Impôts</th><th class="n">Loyer+GLF</th><th class="n">Vie quot.</th><th class="n">Extras</th><th class="n">Business net</th></tr></thead><tbody>' +
       a.slice().reverse().map(function (y) { return '<tr class="click" data-y="' + y.year + '"><td class="sticky"><b>' + y.year + '</b></td><td class="n">' + n0(y.revenus) + '</td><td class="n">' + n0(y.depenses) + '</td><td class="n ' + cls(y.bilan) + '">' + signed(y.bilan) + '</td><td class="n">' + (y.tauxEpargne == null ? '–' : pf.format(y.tauxEpargne)) + '</td><td class="n ' + cls(y.epargneReelle) + '">' + signed(y.epargneReelle) + '</td><td class="n">' + pf.format(y.tauxReel) + '</td><td class="n">' + n0(y.cumul) + '</td><td class="n">' + n0(y.investissements) + '</td><td class="n">' + n0(y.impots) + '</td><td class="n">' + n0(y.loyerGlf) + '</td><td class="n">' + n0(y.vieQuotidienne) + '</td><td class="n">' + n0(y.extras) + '</td><td class="n ' + cls(y.business) + '">' + signed(y.business) + '</td></tr>'; }).join('') +
       '</tbody></table></div></div>';
     $('#view-hist').innerHTML = html;
@@ -586,7 +603,8 @@
       kpi('Dernier relevé', last ? n0(last.totalNtd) : '–', last ? dstr(last.date) : 'aucun') + kpi('Depuis le dernier relevé', last ? '<span class="' + cls(live.totalNtd - last.totalNtd) + '">' + signed(live.totalNtd - last.totalNtd) + '</span>' : '–', '') + '</div>';
     if (sn.length > 1) h += legend([['Patrimoine total', css('--s1')], ['Investi cumulé', css('--s2')]]) + '<div class="chart"><canvas id="cSnap"></canvas></div>';
     else h += '<p class="small muted">Le graphique d\'évolution apparaît à partir de 2 relevés (un par mois suffit).</p>';
-    h += '<div class="tablewrap section"><table class="t"><thead><tr><th class="sticky">Date</th><th class="n">Taux</th><th class="n">Patrimoine NT$</th><th class="n">Patrimoine €</th><th class="n">Comptes TW</th><th class="n">Investi cumulé</th><th class="n">Plus-value</th><th class="n">Variation</th></tr></thead><tbody>' +
+    h += '<div class="only-phone section">' + sn.slice().reverse().map(function (x) { return '<div class="li2"><div><b>' + dstr(x.date) + '</b>' + (x.isNew ? ' <span class="tag new">Nouveau</span>' : '') + '<div class="small muted">taux ' + nf2.format(x.rate) + ' · plus-value <span class="' + cls(x.latent) + '">' + signed(x.latent) + '</span></div></div><div class="r"><b class="num">' + n0(x.totalNtd) + '</b><div class="small ' + cls(x.variation) + '">' + signed(x.variation) + '</div></div></div>'; }).join('') + '</div>';
+    h += '<div class="tablewrap section only-desk"><table class="t"><thead><tr><th class="sticky">Date</th><th class="n">Taux</th><th class="n">Patrimoine NT$</th><th class="n">Patrimoine €</th><th class="n">Comptes TW</th><th class="n">Investi cumulé</th><th class="n">Plus-value</th><th class="n">Variation</th></tr></thead><tbody>' +
       sn.slice().reverse().map(function (x) { return '<tr><td class="sticky">' + dstr(x.date) + (x.isNew ? ' <span class="tag new">Nouveau</span>' : '') + '</td><td class="n">' + nf2.format(x.rate) + '</td><td class="n"><b>' + n0(x.totalNtd) + '</b></td><td class="n">' + n0(x.totalEur) + '</td><td class="n">' + n0(x.tw) + '</td><td class="n">' + n0(x.invested) + '</td><td class="n ' + cls(x.latent) + '">' + signed(x.latent) + '</td><td class="n ' + cls(x.variation) + '">' + signed(x.variation) + '</td></tr>'; }).join('') +
       '</tbody></table></div><p class="small muted">Un relevé fige les valeurs du jour (valeurs actuelles des plateformes, Compte FR, taux de change). Mettez d\'abord à jour les valeurs dans « Patrimoine ». Comptes TW = lignes datées uniquement ; Family investment au coût.</p></div>';
     return h;
@@ -611,6 +629,27 @@
   }
 
   // ---------- Budget & Prevision ----------
+  // Liste budget pour petit ecran : reel / prevision face au budget, barre de consommation, ecart
+  function budList(b, h) {
+    var K = { mois: { r: 'E', b: 'D', e: 'F', rl: 'Réel' }, cumul: { r: 'H', b: 'G', e: 'I', rl: 'Réel' }, annee: { r: 'M', b: 'N', e: 'O', rl: 'Prévision' } }[h];
+    var item = function (l, o, kind, strong) {
+      var real = o[K.r], bud = o[K.b], ec = o[K.e];
+      var pct = bud ? Math.max(0, Math.min(1.25, real / bud)) : 0, fav = ec == null ? null : ec >= 0;
+      var extra = h === 'cumul' && o.J != null ? ' · N-1 ' + n0(o.J) + (o.K != null && isFinite(o.K) ? ' (' + (o.K > 0 ? '+' : '') + pf.format(o.K) + ')' : '') :
+        h === 'annee' && o.method ? ' · ' + esc(o.method) + (o.L != null ? ' ' + n0(o.L) + '/mois' : '') : '';
+      return '<div class="bi' + (strong ? ' strong' : '') + '"><div class="bi-h"><span>' + l + '</span><span class="num">' + n0(real) + '</span></div>' +
+        (bud ? '<div class="bar' + (fav === false ? ' bad' : '') + '"><i style="width:' + (Math.min(pct, 1) * 100).toFixed(1) + '%"></i>' + (pct > 1 ? '<em></em>' : '') + '</div>' : '') +
+        '<div class="bi-s">' + (bud != null ? 'Budget ' + n0(bud) : 'Non budgété') + (ec != null ? ' · écart <span class="' + cls(ec) + '">' + signed(ec) + '</span>' : '') + extra + '</div></div>';
+    };
+    var o = '<div class="only-phone budlist"><div class="bl-head small muted">Montant = ' + K.rl.toLowerCase() + ' ; barre = part du budget</div><h3>Revenus</h3>';
+    b.lines.filter(function (l) { return l.kind === 'rev'; }).forEach(function (l) { o += item(esc(l.label), l); });
+    o += item('Total revenus', b.totalRev, 'rev', true) + '<h3>Dépenses</h3>';
+    b.lines.filter(function (l) { return l.kind === 'dep'; }).forEach(function (l) { o += item(esc(l.label), l); });
+    o += item('Total dépenses', b.totalDep, 'dep', true) + '<h3>Épargne</h3>';
+    o += item('Épargne (taux ' + pctOk(b.savingsRate[K.r]) + ')', b.savings, 'sav', true);
+    b.lines.filter(function (l) { return l.kind === 'inv'; }).forEach(function (l) { o += item(esc(l.label) + ' (placé)', l); });
+    return o + '</div>';
+  }
   function renderBudget() {
     var r = state.res, d = state.data;
     if (!d.budget) { $('#view-bud').innerHTML = '<div class="card empty">Pas d\'onglet « Budget & Prevision » dans ce classeur.</div>'; return; }
@@ -632,17 +671,17 @@
     b.lines.filter(function (l) { return l.kind === 'dep'; }).forEach(function (l) { rows += row(esc(l.label), l, mtag(l)); });
     rows += row('<b>Total dépenses</b>', b.totalDep, '', 'total');
     rows += row('<b>Épargne</b>', b.savings, '', 'total');
-    rows += '<tr><td class="sticky">Taux d\'épargne</td>' + H.cols.map(function (c) { var v = b.savingsRate[c[0]]; return '<td class="n">' + (v == null ? '' : pf.format(v)) + '</td>'; }).join('') + '</tr>';
+    rows += '<tr><td class="sticky">Taux d\'épargne</td>' + H.cols.map(function (c) { var v = b.savingsRate[c[0]]; return '<td class="n">' + pctOk(v) + '</td>'; }).join('') + '</tr>';
     b.lines.filter(function (l) { return l.kind === 'inv'; }).forEach(function (l) { rows += row(esc(l.label) + ' <span class="small muted">(épargne placée)</span>', l, mtag(l)); });
     var sv = b.savings, sr = b.savingsRate;
     var html = '<div class="toolbar"><select id="bMonth">' + opts.map(function (o) { return '<option value="' + o[0] + '-' + o[1] + '"' + (o[0] === B.year && o[1] === B.month ? ' selected' : '') + '>' + MONTHS_SHORT[o[1] - 1] + ' ' + o[0] + '</option>'; }).join('') + '</select>' +
       '<div class="seg" id="bH">' + [['mois', 'Mois'], ['cumul', 'Cumul'], ['annee', 'Année']].map(function (x) { return '<button type="button" data-v="' + x[0] + '"' + (B.h === x[0] ? ' class="on"' : '') + '>' + x[1] + '</button>'; }).join('') + '</div></div>';
     html += '<div class="grid g4">' +
-      kpi('Épargne du mois', '<span class="' + cls(sv.E) + '">' + signed(sv.E) + '</span>', 'budget ' + n0(sv.D) + ' · taux ' + (sr.E == null ? '–' : pf.format(sr.E))) +
+      kpi('Épargne du mois', '<span class="' + cls(sv.E) + '">' + signed(sv.E) + '</span>', 'budget ' + n0(sv.D) + ' · taux ' + pctOk(sr.E)) +
       kpi('Épargne cumulée ' + B.year, '<span class="' + cls(sv.H) + '">' + signed(sv.H) + '</span>', 'budget ' + n0(sv.G) + ' · écart ' + signed(sv.I)) +
-      kpi('Prévision épargne ' + B.year, '<span class="' + cls(sv.M) + '">' + signed(sv.M) + '</span>', 'budget ' + n0(sv.N) + ' · taux ' + (sr.M == null ? '–' : pf.format(sr.M))) +
+      kpi('Prévision épargne ' + B.year, '<span class="' + cls(sv.M) + '">' + signed(sv.M) + '</span>', 'budget ' + n0(sv.N) + ' · taux ' + pctOk(sr.M)) +
       kpi('Dépenses prévues ' + B.year, ntd(b.totalDep.M), 'budget ' + n0(b.totalDep.N) + ' · écart ' + signed(b.totalDep.O)) + '</div>';
-    html += '<div class="card section"><div class="chart-head"><h2>' + H.title + '</h2><span class="small muted">Écart positif = favorable</span></div><div class="tablewrap"><table class="t"><thead><tr><th class="sticky">Poste</th>' + H.cols.map(function (c) { return '<th class="n">' + c[1] + '</th>'; }).join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    html += '<div class="card section"><div class="chart-head"><h2>' + H.title + '</h2><span class="small muted">Écart positif = favorable</span></div><div class="tablewrap only-desk"><table class="t"><thead><tr><th class="sticky">Poste</th>' + H.cols.map(function (c) { return '<th class="n">' + c[1] + '</th>'; }).join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div>' + budList(b, B.h) +
       '<p class="small muted">Budgets issus de l\'onglet Situations (comme dans Excel). Impôts : régularisation N-1 budgétée en ' + MONTHS_SHORT[(d.config.taxMonth || 6) - 1] + '. Retenue à la source estimée sur le salaire (déjà déduite du net) : ' + n0((b.withholdingInfo[{ mois: 'E', cumul: 'H', annee: 'M' }[B.h]]) || 0) + ' NT$.</p></div>';
     html += '<div class="card section"><h2>Épargne : budget vs réel / prévision</h2>' + legend([['Budget', css('--s1')], ['Réel / prévision', css('--s2')]]) + '<div class="chart"><canvas id="cBud"></canvas></div></div>';
     $('#view-bud').innerHTML = html;
@@ -658,18 +697,22 @@
     var devSel = function (id, cur) { return '<select id="' + id + '">' + devs.map(function (x) { return '<option' + (x === cur ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select>'; };
     var html = '<div class="grid g4">' + kpi('Patrimoine total', ntd(r.netWorthNtd), eur(r.netWorthEur)) + kpi('Liquidités', ntd(r.liquidNtd), 'SCB + Richart + Compte FR') +
       kpi('Valeur des placements', ntd(r.platValueNtd), 'Investi ' + n0(r.platInvNtd)) + kpi('P&amp;L', '<span class="' + cls(r.plNtd) + '">' + signed(r.plNtd) + '</span>', r.platInvNtd ? pf.format(r.plNtd / r.platInvNtd) : '') + '</div>';
-    html += '<div class="card section"><div class="chart-head"><h2>Plateformes d\'investissement</h2><span class="small muted">Saisissez la valeur affichée par vos applis</span></div><div class="tablewrap"><table class="t"><thead><tr><th class="sticky">Type</th><th class="n">Investi NT$</th><th>Valeur actuelle</th><th class="n">Valeur NT$</th><th class="n">P&amp;L NT$</th><th class="n">P&amp;L %</th></tr></thead><tbody>' +
-      r.platforms.map(function (p, i) { return '<tr><td class="sticky">' + esc(p.type) + (p.status !== 'OK' ? ' <span class="tag pend">À renseigner</span>' : '') + '</td><td class="n">' + n0(p.investedNtd) + '</td><td>' + (p.locked ? '<span class="small muted">' + esc(p.note || 'Calculé dans le classeur') + '</span>' : '<div class="inline-edit"><input class="inp" inputmode="decimal" data-plat="' + i + '" value="' + (p.value == null ? '' : esc(String(p.value))) + '" placeholder="vide = investi">' + devSel('pd' + i, p.devise) + '</div>') + '</td><td class="n">' + n0(p.valueNtd) + '</td><td class="n ' + cls(p.plNtd) + '">' + signed(p.plNtd) + '</td><td class="n">' + (p.plPct == null ? '–' : pf.format(p.plPct)) + '</td></tr>'; }).join('') +
-      '<tr class="total"><td class="sticky">Total</td><td class="n">' + n0(r.platInvNtd) + '</td><td></td><td class="n">' + n0(r.platValueNtd) + '</td><td class="n ' + cls(r.plNtd) + '">' + signed(r.plNtd) + '</td><td class="n">' + (r.platInvNtd ? pf.format(r.plNtd / r.platInvNtd) : '–') + '</td></tr></tbody></table></div></div>';
+    html += '<div class="card section"><div class="chart-head"><h2>Plateformes d\'investissement</h2><span class="small muted">Valeur affichée par vos applis</span></div><div class="plats">' +
+      r.platforms.map(function (p, i) {
+        return '<div class="plat"><div class="pl-n"><b>' + esc(p.type) + '</b>' + (p.status !== 'OK' ? ' <span class="tag pend">À renseigner</span>' : '') + '<div class="small muted">investi ' + n0(p.investedNtd) + '</div></div>' +
+          '<div class="pl-in">' + (p.locked ? '<span class="small muted">' + esc(p.note || 'Calculé dans le classeur') + '</span>' : '<div class="inline-edit"><input class="inp" inputmode="decimal" data-plat="' + i + '" value="' + (p.value == null ? '' : esc(String(p.value))) + '" placeholder="vide = investi">' + devSel('pd' + i, p.devise) + '</div>') + '</div>' +
+          '<div class="pl-v"><b class="num">' + n0(p.valueNtd) + '</b><div class="small ' + cls(p.plNtd) + '">' + signed(p.plNtd) + (p.plPct == null ? '' : ' (' + pf.format(p.plPct) + ')') + '</div></div></div>';
+      }).join('') +
+      '<div class="plat total"><div class="pl-n"><b>Total</b><div class="small muted">investi ' + n0(r.platInvNtd) + '</div></div><div class="pl-in"></div><div class="pl-v"><b class="num">' + n0(r.platValueNtd) + '</b><div class="small ' + cls(r.plNtd) + '">' + signed(r.plNtd) + (r.platInvNtd ? ' (' + pf.format(r.plNtd / r.platInvNtd) + ')' : '') + '</div></div></div></div></div>';
     html += '<div class="grid g2 stack-sm section"><div class="card"><h2>Liquidités</h2><table class="t"><tbody>' +
       r.liquid.map(function (l) { return '<tr><td>' + esc(l.name) + (l.manual ? '<div class="inline-edit" style="margin-top:6px"><input class="inp" inputmode="decimal" id="frVal" value="' + (d.fr.value == null ? '' : esc(String(d.fr.value))) + '">' + devSel('frDev', d.fr.devise) + '</div>' : '') + '</td><td class="n">' + n0(l.ntd) + '</td></tr>'; }).join('') +
       '<tr class="total"><td>Total (NT$)</td><td class="n">' + n0(r.liquidNtd) + '</td></tr></tbody></table><p class="small muted">SCB et Richart sont calculés depuis les lignes ; seul le Compte FR se saisit à la main.</p></div>' +
-      '<div class="card"><h2>Taux de change</h2><div class="inline-edit"><span>1 € =</span><input class="inp" id="rateVal" inputmode="decimal" value="' + esc(String(d.rate)) + '"><span>NT$</span></div><p class="small muted">Dernière mise à jour : ' + (d.rateDate ? dstr(d.rateDate) : '–') + '. Source unique du classeur (Transactions!N20).</p>' +
+      '<div class="card"><h2>Taux de change</h2><div class="inline-edit"><span>1 € =</span><input class="inp" id="rateVal" inputmode="decimal" value="' + esc(String(d.rate)) + '"><span>NT$</span></div><p class="small muted">Dernière mise à jour : ' + (d.rateDate ? dstr(d.rateDate) : '–') + '. Source unique du classeur (Transactions!' + d.rateRef.col + d.rateRef.row + ').</p>' +
       '<h3>Hors patrimoine</h3><table class="t"><tbody>' + r.others.map(function (o) { return '<tr><td>' + esc(o.type) + '</td><td class="n">' + ntd(o.investedNtd) + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
-    var mv = d.inv.filter(function (x) { return !x.empty; }).slice(0, 40);
-    html += '<div class="card section"><div class="chart-head"><h2>Mouvements d\'investissement</h2><button type="button" class="btn primary" id="btnInvAdd">+ Ajouter un mouvement</button></div><div class="tablewrap"><table class="t"><thead><tr><th>Date</th><th>Type</th><th class="n">Montant</th><th>Devise</th><th class="n">NT$</th></tr></thead><tbody>' +
-      mv.map(function (x) { var nt = x.devise === 'EUR' ? x.montant * d.rate : x.montant; return '<tr><td>' + (x.date != null ? dstr(x.date) : '—') + (x.isNew ? ' <span class="tag new">Nouveau</span>' : '') + '</td><td>' + esc(x.type) + '</td><td class="n ' + cls(x.montant) + '">' + n0(x.montant) + '</td><td>' + esc(x.devise) + '</td><td class="n">' + n0(nt) + '</td></tr>'; }).join('') +
-      '</tbody></table></div><p class="small muted">Montant négatif = retrait. Les mouvements existants se corrigent dans Excel.</p></div>';
+    var mvAll = d.inv.filter(function (x) { return !x.empty; }), mv = mvAll.slice(0, state.mvLimit || 8);
+    html += '<div class="card section"><div class="chart-head"><h2>Mouvements d\'investissement</h2><button type="button" class="btn primary" id="btnInvAdd">+ Ajouter</button></div><div class="mvlist">' +
+      mv.map(function (x) { var nt = x.devise === 'EUR' ? x.montant * d.rate : x.montant; return '<div class="li2"><div><b>' + esc(x.type) + '</b>' + (x.isNew ? ' <span class="tag new">Nouveau</span>' : '') + '<div class="small muted">' + (x.date != null ? dstr(x.date) : '—') + '</div></div><div class="r"><b class="num ' + cls(x.montant) + '">' + n0(x.montant) + ' ' + esc(x.devise === 'EUR' ? '€' : 'NT$') + '</b>' + (x.devise === 'EUR' ? '<div class="small muted">' + n0(nt) + ' NT$</div>' : '') + '</div></div>'; }).join('') +
+      '</div>' + (mvAll.length > mv.length ? '<button type="button" class="btn more" id="mvMore">Afficher plus (' + (mvAll.length - mv.length) + ')</button>' : '') + '<p class="small muted">Montant négatif = retrait. Les mouvements existants se corrigent dans Excel.</p></div>';
     $('#view-inv').innerHTML = html;
 
     var upsertSimple = function (match, op) { var ops = state.ops.filter(function (o) { return !match(o); }); ops.push(op); setOps(ops); toast('Modification prête à être enregistrée'); };
@@ -689,6 +732,7 @@
     $('#frVal').onchange = frC; $('#frDev').onchange = frC;
     $('#rateVal').onchange = function () { var v = parseAmount($('#rateVal').value); if (!(v > 0)) return toast('Taux invalide'); if (v === d.rate) return; upsertSimple(function (o) { return o.type === 'setRate'; }, { type: 'setRate', value: v, date: E.todaySerial() }); };
     $('#btnInvAdd').onclick = openInvForm;
+    var mm = $('#mvMore'); if (mm) mm.onclick = function () { state.mvLimit = (state.mvLimit || 8) + 30; renderInv(); };
   }
   function openInvForm() {
     var C = state.data.config, types = C.invTypes.length ? C.invTypes : state.data.platforms.map(function (p) { return p.type; }), devs = C.devises.length ? C.devises : ['NTD', 'EUR'];
