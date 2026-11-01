@@ -662,13 +662,16 @@
   function renderBudget() {
     var r = state.res, d = state.data;
     if (!d.budget) { $('#view-bud').innerHTML = '<div class="card empty">Pas d\'onglet « Budget & Prevision » dans ce classeur.</div>'; return; }
-    var B = state.bud || (state.bud = { year: r.lastFullMonth.year, month: r.lastFullMonth.month, h: 'mois' });
+    var tp0 = E.serialToParts(r.today), cur0 = d.tx.some(function (t) { return t.year === tp0.y && t.month === tp0.m; });
+    var B = state.bud || (state.bud = cur0 ? { year: tp0.y, month: tp0.m, h: 'mois' } : { year: r.lastFullMonth.year, month: r.lastFullMonth.month, h: 'mois' });
     var b = r.budget(B.year, B.month);
     var first = d.tx.filter(function (t) { return t.date != null; }).reduce(function (m, t) { return Math.min(m, t.date); }, Infinity);
     var fp = isFinite(first) ? E.serialToParts(first) : { y: r.lastFullMonth.year, m: r.lastFullMonth.month }, opts = [];
-    var yy = r.lastFullMonth.year, mm = r.lastFullMonth.month;
+    // le mois en cours est propose (marque « en cours ») des qu'il contient une ligne datee
+    var tpn = E.serialToParts(r.today), curHas = d.tx.some(function (t) { return t.year === tpn.y && t.month === tpn.m; });
+    var yy = curHas ? tpn.y : r.lastFullMonth.year, mm = curHas ? tpn.m : r.lastFullMonth.month;
     while (yy > fp.y || (yy === fp.y && mm >= fp.m)) { opts.push([yy, mm]); mm--; if (mm < 1) { mm = 12; yy--; } }
-    var H = { mois: { cols: [['D', 'Budget'], ['E', 'Réel'], ['F', 'Écart']], title: 'Le mois : ' + MONTHS_SHORT[B.month - 1] + ' ' + B.year },
+    var H = { mois: { cols: [['D', 'Budget'], ['E', 'Réel'], ['F', 'Écart']], title: 'Le mois : ' + MONTHS_SHORT[B.month - 1] + ' ' + B.year + (B.year === tp0.y && B.month === tp0.m ? ' (en cours, jour ' + tp0.d + ')' : '') },
       cumul: { cols: [['G', 'Budget cumulé'], ['H', 'Réel cumulé'], ['I', 'Écart'], ['J', 'N-1 même période'], ['K', 'Évol. vs N-1']], title: 'Cumul janvier → ' + MONTHS_SHORT[B.month - 1] + ' ' + B.year },
       annee: { cols: [['L', 'Rythme / mois (6 mois)'], ['M', 'Prévision fin d\'année'], ['N', 'Budget annuel'], ['O', 'Écart prévision'], ['P', 'Réel N-1']], title: 'Année ' + B.year + ' complète (' + b.rest + ' mois restants prévus)' } }[B.h];
     var fmt = function (k, v) { if (v == null) return '<span class="muted">–</span>'; if (k === 'K') return '<span class="' + cls(v) + '">' + (v > 0 ? '+' : '') + pf.format(v) + '</span>'; if ('FIO'.indexOf(k) >= 0) return '<span class="' + cls(v) + '">' + signed(v) + '</span>'; return n0(v); };
@@ -683,7 +686,7 @@
     rows += '<tr><td class="sticky">Taux d\'épargne</td>' + H.cols.map(function (c) { var v = b.savingsRate[c[0]]; return '<td class="n">' + pctOk(v) + '</td>'; }).join('') + '</tr>';
     b.lines.filter(function (l) { return l.kind === 'inv'; }).forEach(function (l) { rows += row(esc(l.label) + ' <span class="small muted">(épargne placée)</span>', l, mtag(l)); });
     var sv = b.savings, sr = b.savingsRate;
-    var html = '<div class="toolbar"><select id="bMonth">' + opts.map(function (o) { return '<option value="' + o[0] + '-' + o[1] + '"' + (o[0] === B.year && o[1] === B.month ? ' selected' : '') + '>' + MONTHS_SHORT[o[1] - 1] + ' ' + o[0] + '</option>'; }).join('') + '</select>' +
+    var html = '<div class="toolbar"><select id="bMonth">' + opts.map(function (o) { return '<option value="' + o[0] + '-' + o[1] + '"' + (o[0] === B.year && o[1] === B.month ? ' selected' : '') + '>' + MONTHS_SHORT[o[1] - 1] + ' ' + o[0] + (o[0] === tpn.y && o[1] === tpn.m ? ' (en cours)' : '') + '</option>'; }).join('') + '</select>' +
       '<div class="seg" id="bH">' + [['mois', 'Mois'], ['cumul', 'Cumul'], ['annee', 'Année']].map(function (x) { return '<button type="button" data-v="' + x[0] + '"' + (B.h === x[0] ? ' class="on"' : '') + '>' + x[1] + '</button>'; }).join('') + '</div></div>';
     html += '<div class="grid g4">' +
       kpi('Épargne du mois', '<span class="' + cls(sv.E) + '">' + signed(sv.E) + '</span>', 'budget ' + n0(sv.D) + ' · taux ' + pctOk(sr.E)) +
