@@ -102,12 +102,123 @@
   // ----- styles de reference (ligne datee / ligne en attente) -----
   function styleSet(rowText, cols) { var o = {}; cols.forEach(function (c) { var x = getCell(rowText, c); o[c] = x ? attr(x.text, 's') : null; }); return o; }
 
+  // ----- Reordonnancement du tableau Transactions -----
+  // Decale toutes les references relatives (lignes non ancrees) d'une formule de « delta » lignes.
+  // Les chaines entre guillemets et les references absolues ($ devant la ligne) ne bougent pas.
+  function shiftAll(f, delta) {
+    if (!delta) return f;
+    var parts = f.split(/("(?:[^"]|"")*")/);
+    return parts.map(function (seg, i) {
+      if (i % 2) return seg; // litteral texte
+      return seg.replace(/(^|[^A-Za-z0-9_.\]'!$])(\$?)([A-Z]{1,3})(\$?)(\d+)(?![\d(A-Za-z_])/g, function (all, pre, d1, col, d2, row) {
+        if (d2 === '$') return all; // ligne absolue
+        return pre + d1 + col + d2 + (+row + delta);
+      });
+    }).join('');
+  }
+  // Remet le tableau dans l'ordre : lignes vides en haut (au moins minSlots), puis lignes en attente
+  // (achat le plus recent d'abord), puis lignes datees de la plus recente a la plus ancienne.
+  // Seules les cellules des colonnes du tableau bougent ; le bloc de controles a droite reste en place.
+  function reorderTable(xml, T, txModel, minSlots) {
+    var c0 = E.colToNum(T.range.s.col), c1 = E.colToNum(T.range.e.col);
+    var tStart = T.range.s.row + 1, tEnd = T.range.e.row;
+    var inT = function (col) { var n = E.colToNum(col); return n >= c0 && n <= c1; };
+    // 1. lecture des lignes
+    var sdA = xml.indexOf('<sheetData>'), sdB = xml.indexOf('</sheetData>');
+    if (sdA < 0 || sdB < 0) throw new Error('sheetData introuvable');
+    var body = xml.slice(sdA + 11, sdB), rows = {}, order = [];
+    body.replace(/<row r="(\d+)"([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g, function (all, r, attrs, inner) {
+      rows[+r] = { attrs: attrs, cells: inner ? cellsOf('<row>' + inner + '</row>').map(function (c) { return { col: c.col, text: c.text }; }) : [] };
+      order.push(+r); return all;
+    });
+    // 2. formules partagees du tableau -> formules explicites (indispensable avant de deplacer des lignes)
+    var masters = {};
+    for (var r = tStart; r <= tEnd; r++) (rows[r] ? rows[r].cells : []).forEach(function (c) {
+      if (!inT(c.col)) return;
+      var m = /<f t="shared" ref="[^"]*" si="(\d+)"[^>]*>([\s\S]*?)<\/f>/.exec(c.text);
+      if (m) masters[m[1]] = { text: m[2], row: r };
+    });
+    for (var r2 = tStart; r2 <= tEnd; r2++) (rows[r2] ? rows[r2].cells : []).forEach(function (c) {
+      if (!inT(c.col)) return;
+      var ms = /<f t="shared" ref="[^"]*" si="(\d+)"[^>]*>([\s\S]*?)<\/f>/.exec(c.text);
+      if (ms) { c.text = c.text.replace(ms[0], '<f>' + ms[2] + '</f>'); return; }
+      var ch = /<f t="shared" si="(\d+)"\s*\/>/.exec(c.text);
+      if (ch) {
+        var mm = masters[ch[1]]; if (!mm) throw new Error('Formule partagee sans maitre (si ' + ch[1] + ')');
+        c.text = c.text.replace(ch[0], '<f>' + shiftAll(mm.text, r2 - mm.row) + '</f>');
+      }
+    });
+    // 3. nouvel ordre
+    var model = {}; txModel.forEach(function (t) { model[t.row] = t; });
+    var empties = [], pend = [], dated = [];
+    for (var r3 = tStart; r3 <= tEnd; r3++) {
+      var t = model[r3], cells = rows[r3] ? rows[r3].cells.filter(function (c) { return inT(c.col); }) : [];
+      var item = { src: r3, cells: cells, t: t };
+      if (!t || t.empty) empties.push(item); else if (t.date == null) pend.push(item); else dated.push(item);
+    }
+    pend.sort(function (a, b) { return (b.t.achat || 0) - (a.t.achat || 0) || a.src - b.src; });
+    dated.sort(function (a, b) { return b.t.date - a.t.date || a.src - b.src; });
+    var slots = Math.max(minSlots, empties.length);
+    // modele de ligne vide : une ligne vide existante, sinon une ligne de donnees videe (styles et formules gardes)
+    var srcT = empties[0] || dated[0] || pend[0];
+    var tmplEmpty = empties[0] || { src: srcT.src, cells: srcT.cells.map(function (c) {
+      if (/<f[ >]/.test(c.text)) return c;
+      var st = attr(c.text, 's'); return { col: c.col, text: '<c r="' + c.col + srcT.src + '"' + (st != null ? ' s="' + st + '"' : '') + '/>' };
+    }) };
+    var seq = [];
+    for (var i = 0; i < slots; i++) seq.push(empties[i] || { src: tmplEmpty.src, cells: tmplEmpty.cells, synth: true });
+    seq = seq.concat(pend, dated);
+    var newEnd = tStart + seq.length - 1;
+    // les lignes sous l'ancien tableau qui seront occupees doivent etre vides dans les colonnes du tableau
+    for (var r4 = tEnd + 1; r4 <= newEnd; r4++) if (rows[r4] && rows[r4].cells.some(function (c) { return inT(c.col) && /<v>|<is>|<f/.test(c.text); }))
+      throw new Error('La ligne ' + r4 + ' sous le tableau n\'est pas vide : impossible de l\'agrandir.');
+    // 4. reconstruction : cellules hors tableau inchangees, cellules du tableau deplacees
+    var keepAttrs = rows[tStart] ? rows[tStart].attrs.replace(/ spans="[^"]*"/, '') : '';
+    var moved = {};
+    seq.forEach(function (it, idx) {
+      var nr = tStart + idx, delta = nr - it.src;
+      moved[nr] = it.cells.map(function (c) {
+        var tx = c.text.replace(/^<c r="[A-Z]+\d+"/, '<c r="' + c.col + nr + '"');
+        tx = tx.replace(/<f([^>]*)>([\s\S]*?)<\/f>/, function (a, at, ftx) { return '<f' + at.replace(/ ref="[A-Z]+\d+(:[A-Z]+\d+)?"/, function (x) { return ' ref="' + c.col + nr + '"'; }) + '>' + shiftAll(ftx, delta) + '</f>'; });
+        if (it.synth) tx = tx.replace(/<v>[\s\S]*?<\/v>/, '<v/>');
+        return { col: c.col, text: tx };
+      });
+    });
+    var all = {}; order.forEach(function (r5) { all[r5] = true; }); for (var r6 = tStart; r6 <= newEnd; r6++) all[r6] = true;
+    var out = Object.keys(all).map(Number).sort(function (a, b) { return a - b; }).map(function (rn) {
+      var base = rows[rn], inTable = rn >= tStart && rn <= Math.max(tEnd, newEnd);
+      var cells = (base ? base.cells : []).filter(function (c) { return !(inTable && inT(c.col)); });
+      if (moved[rn]) cells = cells.concat(moved[rn]);
+      cells.sort(function (a, b) { return E.colToNum(a.col) - E.colToNum(b.col); });
+      var attrs = base ? base.attrs.replace(/ spans="[^"]*"/, '') : keepAttrs;
+      return cells.length ? '<row r="' + rn + '"' + attrs + '>' + cells.map(function (c) { return c.text; }).join('') + '</row>' : '<row r="' + rn + '"' + attrs + '/>';
+    }).join('');
+    xml = xml.slice(0, sdA + 11) + out + xml.slice(sdB);
+    if (newEnd !== tEnd) xml = extendRanges(xml, tEnd, newEnd, tStart);
+    return { xml: xml, newEnd: newEnd, moved: seq.length, slots: slots };
+  }
+  function needsReorder(txModel, tStart) {
+    var nonEmpty = txModel.filter(function (t) { return !t.empty; }).sort(function (a, b) { return a.row - b.row; });
+    var empties = txModel.filter(function (t) { return t.empty; });
+    var firstUsed = nonEmpty.length ? nonEmpty[0].row : Infinity;
+    if (empties.filter(function (t) { return t.row < firstUsed; }).length < 3) return true; // plus assez de lignes vides en haut
+    if (empties.some(function (t) { return t.row > firstUsed; })) return true;              // trou au milieu (ligne supprimee)
+    var seenDated = false, prev = Infinity;
+    for (var i = 0; i < nonEmpty.length; i++) {
+      var t = nonEmpty[i];
+      if (t.date == null) { if (seenDated) return true; continue; }                          // ligne en attente sous des lignes datees
+      seenDated = true; if (t.date > prev) return true; prev = t.date;                        // dates non decroissantes
+    }
+    return false;
+  }
+
   // ----- application des operations -----
   // ops : [{type:'addTx', data:{date,compte,objet,force,credit,debit}},
   //        {type:'editTx', row, expect:{...}, data:{...}}, {type:'deleteTx', row, expect},
   //        {type:'addInv', data:{type,date,devise,montant}}, {type:'setPlatform', name, value, devise},
   //        {type:'setFR', value, devise}, {type:'setRate', value, date}]
-  async function applyOps(zip, ops) {
+  async function applyOps(zip, ops, opts) {
+    opts = opts || {};
     var loaded = await E.load(zip), wb = loaded.wb, data = loaded.data;
     var T = wb.tables.Transactions, I = wb.tables.InvDetail, S = wb.tables.Snapshots;
     var txPath = wb.sheets.Transactions, invPath = wb.sheets.Investissements;
@@ -323,7 +434,18 @@
       invXml = replaceRow(invXml, row, txt);
     });
 
-    if (results.some(function (r) { return r.ok; })) {
+    // remise en ordre : dernieres entrees en haut, lignes vides recreees en haut du tableau
+    var reorder = null;
+    if (opts.reorder !== false && (results.some(function (r) { return r.ok; }) || opts.forceReorder) && needsReorder(data.tx, tStart)) {
+      var Tcur = { range: { s: T.range.s, e: { col: T.range.e.col, row: tEnd } } };
+      try {
+        reorder = reorderTable(txXml, Tcur, data.tx, opts.minSlots || 10);
+        txXml = reorder.xml;
+        tTable = setTableEnd(tTable, reorder.newEnd).replace(/<sortState[\s\S]*?<\/sortState>/, '');
+        tEnd = reorder.newEnd;
+      } catch (e) { reorder = { error: e.message }; } // en cas d'echec, on enregistre sans reordonner
+    }
+    if (results.some(function (r) { return r.ok; }) || reorder) {
       zip.file(txPath, txXml, NOF);
       if (invXml) zip.file(invPath, invXml, NOF);
       zip.file(T.path, tTable, NOF);
@@ -343,9 +465,9 @@
         zip.file('[Content_Types].xml', ct.replace(/<Override [^>]*calcChain[^>]*\/>/, ''), NOF);
       }
     }
-    return { zip: zip, results: results };
+    return { zip: zip, results: results, reorder: reorder };
   }
 
-  var api = { applyOps: applyOps, _internals: { findRow: findRow, cellsOf: cellsOf, setInput: setInput, setCached: setCached, shiftFormula: shiftFormula, extendRanges: extendRanges } };
+  var api = { applyOps: applyOps, needsReorder: needsReorder, _internals: { shiftAll: shiftAll, reorderTable: reorderTable, findRow: findRow, cellsOf: cellsOf, setInput: setInput, setCached: setCached, shiftFormula: shiftFormula, extendRanges: extendRanges } };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FinPatch = api;
 })(typeof self !== 'undefined' ? self : this);

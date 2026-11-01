@@ -396,7 +396,14 @@
       if (f.month && t.month !== f.month) return false;
       if (q && (t.objet + ' ' + t.cat + ' ' + n0(t.net) + ' ' + Math.abs(t.net)).toLowerCase().indexOf(q) === -1) return false;
       return true;
-    });
+    }).map(function (t, i) { return [t, i]; }).sort(function (A, B) {
+      // nouvelles lignes non enregistrees, puis en attente (achat le plus recent), puis par date decroissante
+      var a = A[0], b = B[0], ga = a.isNew ? 0 : a.date == null ? 1 : 2, gb = b.isNew ? 0 : b.date == null ? 1 : 2;
+      if (ga !== gb) return ga - gb;
+      if (ga === 1) return (b.achat || 0) - (a.achat || 0) || A[1] - B[1];
+      if (ga === 2) return b.date - a.date || A[1] - B[1];
+      return A[1] - B[1];
+    }).map(function (x) { return x[0]; });
   }
   function renderTx() {
     var d = state.data, f = state.txFilter, C = d.config;
