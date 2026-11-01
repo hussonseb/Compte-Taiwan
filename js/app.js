@@ -662,13 +662,13 @@
   function renderBudget() {
     var r = state.res, d = state.data;
     if (!d.budget) { $('#view-bud').innerHTML = '<div class="card empty">Pas d\'onglet « Budget & Prevision » dans ce classeur.</div>'; return; }
-    var tp0 = E.serialToParts(r.today), cur0 = d.tx.some(function (t) { return t.year === tp0.y && t.month === tp0.m; });
+    var tp0 = E.serialToParts(r.today), cur0 = true;
     var B = state.bud || (state.bud = cur0 ? { year: tp0.y, month: tp0.m, h: 'mois' } : { year: r.lastFullMonth.year, month: r.lastFullMonth.month, h: 'mois' });
     var b = r.budget(B.year, B.month);
     var first = d.tx.filter(function (t) { return t.date != null; }).reduce(function (m, t) { return Math.min(m, t.date); }, Infinity);
     var fp = isFinite(first) ? E.serialToParts(first) : { y: r.lastFullMonth.year, m: r.lastFullMonth.month }, opts = [];
     // le mois en cours est propose (marque « en cours ») des qu'il contient une ligne datee
-    var tpn = E.serialToParts(r.today), curHas = d.tx.some(function (t) { return t.year === tpn.y && t.month === tpn.m; });
+    var tpn = E.serialToParts(r.today), curHas = true; // le mois en cours est toujours propose
     var yy = curHas ? tpn.y : r.lastFullMonth.year, mm = curHas ? tpn.m : r.lastFullMonth.month;
     while (yy > fp.y || (yy === fp.y && mm >= fp.m)) { opts.push([yy, mm]); mm--; if (mm < 1) { mm = 12; yy--; } }
     var H = { mois: { cols: [['D', 'Budget'], ['E', 'Réel'], ['F', 'Écart']], title: 'Le mois : ' + MONTHS_SHORT[B.month - 1] + ' ' + B.year + (B.year === tp0.y && B.month === tp0.m ? ' (en cours, jour ' + tp0.d + ')' : '') },
