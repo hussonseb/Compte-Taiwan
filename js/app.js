@@ -629,24 +629,33 @@
   }
 
   // ---------- Budget & Prevision ----------
-  // Liste budget pour petit ecran : reel / prevision face au budget, barre de consommation, ecart
+  // Liste budget pour petit ecran : chaque poste = montant, barre, puis lignes libellees (une info par ligne)
   function budList(b, h) {
-    var K = { mois: { r: 'E', b: 'D', e: 'F', rl: 'Réel' }, cumul: { r: 'H', b: 'G', e: 'I', rl: 'Réel' }, annee: { r: 'M', b: 'N', e: 'O', rl: 'Prévision' } }[h];
-    var item = function (l, o, kind, strong) {
+    var K = { mois: { r: 'E', b: 'D', e: 'F', rl: 'Réel du mois', bl: 'Budget du mois' }, cumul: { r: 'H', b: 'G', e: 'I', rl: 'Réel cumulé', bl: 'Budget cumulé' }, annee: { r: 'M', b: 'N', e: 'O', rl: 'Prévision fin d\'année', bl: 'Budget annuel' } }[h];
+    var py = b.year - 1, per = 'Janv.–' + MONTHS_SHORT[b.month - 1] + ' ' + py;
+    var kv = function (k, v) { return '<div class="kv"><span>' + k + '</span><span>' + v + '</span></div>'; };
+    var item = function (l, o, strong, kind) {
+      kind = kind || o.kind;
       var real = o[K.r], bud = o[K.b], ec = o[K.e];
-      var pct = bud ? Math.max(0, Math.min(1.25, real / bud)) : 0, fav = ec == null ? null : ec >= 0;
-      var extra = h === 'cumul' && o.J != null ? ' · N-1 ' + n0(o.J) + (o.K != null && isFinite(o.K) ? ' (' + (o.K > 0 ? '+' : '') + pf.format(o.K) + ')' : '') :
-        h === 'annee' && o.method ? ' · ' + esc(o.method) + (o.L != null ? ' ' + n0(o.L) + '/mois' : '') : '';
+      var pct = bud ? Math.max(0, real / bud) : 0, fav = ec == null ? null : ec >= 0;
+      var rows = '';
+      rows += kv(K.bl, bud != null ? n0(bud) : '<span class="muted">non budgété</span>');
+      if (ec != null) rows += kv('Écart', '<span class="' + cls(ec) + '">' + signed(ec) + '</span>');
+      if (h === 'cumul' && o.J != null) rows += kv(per, n0(o.J) + (o.K != null && isFinite(o.K) ? ' <span class="' + cls(kind === 'dep' ? -o.K : o.K) + '">(' + (o.K > 0 ? '+' : '') + pf.format(o.K) + ')</span>' : ''));
+      if (h === 'annee') {
+        if (o.method) rows += kv('Prévision', o.method === 'Comme N-1' ? 'comme ' + py : n0(o.L) + '/mois (6 mois)');
+        if (o.P != null) rows += kv('Année ' + py, n0(o.P));
+      }
       return '<div class="bi' + (strong ? ' strong' : '') + '"><div class="bi-h"><span>' + l + '</span><span class="num">' + n0(real) + '</span></div>' +
-        (bud ? '<div class="bar' + (fav === false ? ' bad' : '') + '"><i style="width:' + (Math.min(pct, 1) * 100).toFixed(1) + '%"></i>' + (pct > 1 ? '<em></em>' : '') + '</div>' : '') +
-        '<div class="bi-s">' + (bud != null ? 'Budget ' + n0(bud) : 'Non budgété') + (ec != null ? ' · écart <span class="' + cls(ec) + '">' + signed(ec) + '</span>' : '') + extra + '</div></div>';
+        (bud ? '<div class="bar' + (fav === false ? ' bad' : '') + '"><i style="width:' + (Math.min(pct, 1) * 100).toFixed(1) + '%"></i></div><div class="bar-l">' + Math.round(pct * 100) + ' % du budget</div>' : '') +
+        '<div class="kvs">' + rows + '</div></div>';
     };
-    var o = '<div class="only-phone budlist"><div class="bl-head small muted">Montant = ' + K.rl.toLowerCase() + ' ; barre = part du budget</div><h3>Revenus</h3>';
+    var o = '<div class="only-phone budlist"><div class="bl-head small muted">Gros chiffre = ' + K.rl.toLowerCase() + '. Barre = part du budget. Écart vert = favorable.</div><h3>Revenus</h3>';
     b.lines.filter(function (l) { return l.kind === 'rev'; }).forEach(function (l) { o += item(esc(l.label), l); });
-    o += item('Total revenus', b.totalRev, 'rev', true) + '<h3>Dépenses</h3>';
+    o += item('Total revenus', b.totalRev, true) + '<h3>Dépenses</h3>';
     b.lines.filter(function (l) { return l.kind === 'dep'; }).forEach(function (l) { o += item(esc(l.label), l); });
-    o += item('Total dépenses', b.totalDep, 'dep', true) + '<h3>Épargne</h3>';
-    o += item('Épargne (taux ' + pctOk(b.savingsRate[K.r]) + ')', b.savings, 'sav', true);
+    o += item('Total dépenses', b.totalDep, true, 'dep') + '<h3>Épargne</h3>';
+    o += item('Épargne (taux ' + pctOk(b.savingsRate[K.r]) + ')', b.savings, true);
     b.lines.filter(function (l) { return l.kind === 'inv'; }).forEach(function (l) { o += item(esc(l.label) + ' (placé)', l); });
     return o + '</div>';
   }
@@ -681,7 +690,7 @@
       kpi('Épargne cumulée ' + B.year, '<span class="' + cls(sv.H) + '">' + signed(sv.H) + '</span>', 'budget ' + n0(sv.G) + ' · écart ' + signed(sv.I)) +
       kpi('Prévision épargne ' + B.year, '<span class="' + cls(sv.M) + '">' + signed(sv.M) + '</span>', 'budget ' + n0(sv.N) + ' · taux ' + pctOk(sr.M)) +
       kpi('Dépenses prévues ' + B.year, ntd(b.totalDep.M), 'budget ' + n0(b.totalDep.N) + ' · écart ' + signed(b.totalDep.O)) + '</div>';
-    html += '<div class="card section"><div class="chart-head"><h2>' + H.title + '</h2><span class="small muted">Écart positif = favorable</span></div><div class="tablewrap only-desk"><table class="t"><thead><tr><th class="sticky">Poste</th>' + H.cols.map(function (c) { return '<th class="n">' + c[1] + '</th>'; }).join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div>' + budList(b, B.h) +
+    html += '<div class="card section"><div class="chart-head"><h2>' + H.title + '</h2><span class="small muted only-desk">Écart positif = favorable</span></div><div class="tablewrap only-desk"><table class="t"><thead><tr><th class="sticky">Poste</th>' + H.cols.map(function (c) { return '<th class="n">' + c[1] + '</th>'; }).join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div>' + budList(b, B.h) +
       '<p class="small muted">Budgets issus de l\'onglet Situations (comme dans Excel). Impôts : régularisation N-1 budgétée en ' + MONTHS_SHORT[(d.config.taxMonth || 6) - 1] + '. Retenue à la source estimée sur le salaire (déjà déduite du net) : ' + n0((b.withholdingInfo[{ mois: 'E', cumul: 'H', annee: 'M' }[B.h]]) || 0) + ' NT$.</p></div>';
     html += '<div class="card section"><h2>Épargne : budget vs réel / prévision</h2>' + legend([['Budget', css('--s1')], ['Réel / prévision', css('--s2')]]) + '<div class="chart"><canvas id="cBud"></canvas></div></div>';
     $('#view-bud').innerHTML = html;

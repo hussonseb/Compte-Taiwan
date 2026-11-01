@@ -279,3 +279,13 @@ table.t.compact td:last-child, table.t.compact th:last-child { padding-right: 0;
 .inline-edit input.inp { min-width: 0; width: 100%; flex: 1 1 auto; }
 .inline-edit select { flex: 0 0 74px; }
 .inline-edit span { white-space: nowrap; }
+
+/* budget telephone : separation nette entre postes, une info par ligne */
+.budlist .bi { padding: 12px 0 14px; border-bottom: 1px solid var(--line); }
+.budlist .bi.strong { background: var(--surface-2); margin: 6px -12px; padding: 12px; border-radius: 10px; border-bottom: 0; }
+.budlist h3 { margin: 18px 0 2px; }
+.bar-l { font-size: 11.5px; color: var(--ink-3); margin-top: 3px; text-align: right; }
+.kvs { margin-top: 6px; }
+.kv { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 2px 0; color: var(--ink-2); }
+.kv > span:last-child { color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
+.kv > span:first-child { flex: 0 1 auto; }
