@@ -260,7 +260,7 @@
     }
     // 1. Resume
     html += '<div class="grid sum">';
-    html += '<div class="card kpi hero"><div class="l">Patrimoine total</div><div class="v">' + ntd(r.netWorthNtd) + '</div><div class="s">' + eur(r.netWorthEur) + ' · 1 € = ' + nf2.format(r.rate) + ' NT$</div></div>';
+    html += '<div class="card kpi hero"><div class="l">Patrimoine total</div><div class="v">' + ntd(r.netWorthNtd) + '</div><div class="s">' + eur(r.netWorthEur) + ' · 1 € = ' + nf2.format(r.rate) + ' NT$' + (r.pendingTotal ? '<br>lignes en attente déduites (' + n0(r.pendingTotal) + ')' : '') + '</div></div>';
     html += '<div class="card kpi"><div class="l">P&amp;L placements</div><div class="v ' + cls(r.plNtd) + '">' + signed(r.plNtd) + '</div><div class="s">' + (r.platInvNtd ? pf.format(r.plNtd / r.platInvNtd) : '') + ' sur ' + nfc.format(r.platInvNtd * pk()) + '</div></div>';
     html += '<div class="card kpi"><div class="l">Bilan ' + y + '</div><div class="v ' + cls(ann.bilan) + '">' + signed(ann.bilan || 0) + '</div><div class="s">Épargne réelle ' + (ann.tauxReel == null ? '–' : pf.format(ann.tauxReel)) + '</div></div>';
     html += '<div class="card accts"><table class="t compact"><thead><tr><th>Comptes</th><th class="n">Solde</th><th class="n">Appli</th></tr></thead><tbody>' +
@@ -606,7 +606,7 @@
     if (!r.snapshots) return '';
     var sn = r.snapshots, live = r.liveSnap, last = sn[sn.length - 1];
     var h = '<div class="card"><div class="chart-head"><h2>Patrimoine à valeur de marché (relevés)</h2><button type="button" class="btn primary" id="btnSnap">+ Enregistrer un relevé</button></div>';
-    h += '<div class="grid g4" style="margin-bottom:12px">' + kpi('Aujourd\'hui (live)', n0(live.totalNtd), eur(live.totalEur)) + kpi('Plus-value latente', '<span class="' + cls(live.latent) + '">' + signed(live.latent) + '</span>', 'investi ' + n0(live.invested)) +
+    h += '<div class="grid g4" style="margin-bottom:12px">' + kpi('Aujourd\'hui (live)', n0(live.totalNtd), eur(live.totalEur) + (r.pendingTotal ? '<br>lignes en attente non déduites' : '')) + kpi('Plus-value latente', '<span class="' + cls(live.latent) + '">' + signed(live.latent) + '</span>', 'investi ' + n0(live.invested)) +
       kpi('Dernier relevé', last ? n0(last.totalNtd) : '–', last ? dstr(last.date) : 'aucun') + kpi('Depuis le dernier relevé', last ? '<span class="' + cls(live.totalNtd - last.totalNtd) + '">' + signed(live.totalNtd - last.totalNtd) + '</span>' : '–', '') + '</div>';
     if (sn.length > 1) h += legend([['Patrimoine total', css('--s1')], ['Investi cumulé', css('--s2')]]) + '<div class="chart"><canvas id="cSnap"></canvas></div>';
     else h += '<p class="small muted">Le graphique d\'évolution apparaît à partir de 2 relevés (un par mois suffit).</p>';
