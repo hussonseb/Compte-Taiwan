@@ -1,7 +1,7 @@
 /* Service worker : met l'application en cache pour l'ouvrir hors connexion.
  * Seuls les fichiers de l'application sont mis en cache, jamais vos donnees
  * ni les echanges avec Google. Changer VERSION a chaque mise a jour. */
-const VERSION = 'ct-v22';
+const VERSION = 'ct-v23';
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/config.js', 'js/engine.js', 'js/patch.js', 'js/drive.js', 'js/app.js',
   'vendor/jszip.min.js', 'vendor/chart.umd.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });

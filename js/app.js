@@ -389,7 +389,8 @@
     return state.data.tx.filter(function (t) {
       if (t.empty && !t.deleted) return false;
       if (t.deleted) return !f.pending;
-      if (f.pending && !t.pending) return false;
+      if (f.pending === true && !t.pending) return false;
+      if (f.pending === 'done' && t.pending) return false;
       if (f.compte && t.compte !== f.compte) return false;
       if (f.cat && t.cat !== f.cat) return false;
       if (f.year && String(t.year) !== f.year) return false;
@@ -414,7 +415,7 @@
       '<select id="txc">' + opt('', 'Tous comptes', !f.compte) + C.comptes.map(function (c) { return opt(c, c, f.compte === c); }).join('') + '</select>' +
       '<select id="txk">' + opt('', 'Toutes catégories', !f.cat) + cats.map(function (c) { return opt(c, c, f.cat === c); }).join('') + '</select>' +
       '<select id="txy">' + opt('', 'Toutes années', !f.year) + years.map(function (y) { return opt(String(y), String(y), f.year === String(y)); }).join('') + '</select>' +
-      '<label class="check" style="margin:0"><input type="checkbox" id="txp"' + (f.pending ? ' checked' : '') + '> En attente</label></div>';
+      '<select id="txp">' + opt('', 'Tous statuts', !f.pending) + opt('pend', 'En attente', f.pending === true) + opt('done', 'Débitées (datées)', f.pending === 'done') + '</select></div>';
     var rows = filteredTx(), tot = rows.reduce(function (s, t) { return s + (t.deleted ? 0 : t.net); }, 0);
     if (f.month) html += '<p class="small muted">Filtre mois : ' + MONTHS_SHORT[f.month - 1] + ' <button class="linkbtn" id="txclrm">retirer</button></p>';
     html += '<div class="card"><div class="chart-head"><h2>' + rows.length + ' ligne(s)</h2><span class="small muted">Net : <b class="' + cls(tot) + '">' + signed(tot) + '</b> · ' +
@@ -428,7 +429,7 @@
     $('#txc').onchange = function (e) { upd('compte', e.target.value); };
     $('#txk').onchange = function (e) { upd('cat', e.target.value); };
     $('#txy').onchange = function (e) { upd('year', e.target.value); };
-    $('#txp').onchange = function (e) { upd('pending', e.target.checked); };
+    $('#txp').onchange = function (e) { upd('pending', e.target.value === 'pend' ? true : e.target.value === 'done' ? 'done' : false); };
     var cm = $('#txclrm'); if (cm) cm.onclick = function () { upd('month', null); };
     var mo = $('#txmore'); if (mo) mo.onclick = function () { f.limit += 200; renderTx(); };
     bindTxItems($('#view-tx'));
