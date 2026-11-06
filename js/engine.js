@@ -349,9 +349,12 @@
     var years = {};
     rows.forEach(function (t) {
       if (t.pending) return;
-      var y = years[t.year] || (years[t.year] = { year: t.year, n: 0, R: 0, salCred: 0, debNonTIB: 0, bilan: 0, inv: 0, loyGlf: 0, vq: 0, df: 0, ext: 0, imp: 0, bus: 0 });
+      var y = years[t.year] || (years[t.year] = { year: t.year, n: 0, bRev: 0, bSav: 0, R: 0, salCred: 0, debNonTIB: 0, bilan: 0, inv: 0, loyGlf: 0, vq: 0, df: 0, ext: 0, imp: 0, bus: 0 });
       y.n++;
       var notT = !eq(t.cat, TRF);
+      // methode Budget : revenus = net salaire + bonus + business ; remboursements deduits des depenses
+      if (eq(t.cat, SAL) || eq(t.cat, BON) || eq(t.cat, BUS)) y.bRev += t.net;
+      if (notT && !eq(t.cat, INV)) y.bSav += t.net;
       if (notT && !eq(t.cat, BUS)) y.R += t.credit;
       if (eq(t.cat, SAL)) y.salCred += t.credit;
       if (notT && !eq(t.cat, INV) && !eq(t.cat, BUS)) y.debNonTIB += t.debit;
@@ -371,7 +374,8 @@
       return { year: yy, revenus: y.R + S, revenusNets: y.R, depenses: y.debNonTIB + S, bilan: y.bilan, cumul: cum,
         tauxEpargne: y.R ? y.bilan / y.R : null, investissements: y.inv, loyerGlf: y.loyGlf, vieQuotidienne: y.vq,
         depensesFixes: y.df, extras: y.ext, impots: y.imp + S, retenueEstimee: S, business: y.bus,
-        epargneReelle: y.R - y.debNonTIB, tauxReel: y.R ? (y.R - y.debNonTIB) / y.R : 0 };
+        epargneReelle: y.R - y.debNonTIB, tauxReel: y.R ? (y.R - y.debNonTIB) / y.R : 0,
+        epargne: y.bSav, revenusBudget: y.bRev, tauxEpargneBudget: y.bRev ? y.bSav / y.bRev : null };
     });
 
     // Onglets annuels : matrice categorie x mois, filtre compte optionnel
