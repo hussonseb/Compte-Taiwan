@@ -180,6 +180,13 @@
     config.jourPrelevement = await nameVal('JOUR_PRELEVEMENT', 9);
     config.taxMonth = /regularisation/i.test(str(cfg.get('J5'))) && typeof cfg.get('K5') === 'number' ? cfg.get('K5') : 6;
     config.hasCard = !!TC.carte;
+    config.avgMinEntries = 20; config.avgMinMonths = 6;
+    tc.forEach(function (v, k) {
+      if (typeof v !== 'string') return;
+      var isE = /mois compte comme rempli/i.test(v), isM = /annee est retenue/i.test(v); if (!isE && !isM) return;
+      var p = /^([A-Z]+)(\d+)$/.exec(k);
+      for (var cc = colToNum(p[1]) + 1; cc < colToNum(p[1]) + 8; cc++) { var x = tc.get(numToCol(cc) + p[2]); if (typeof x === 'number') { if (isE) config.avgMinEntries = x; else config.avgMinMonths = x; break; } }
+    });
     config.bonusMonth = 1;
     for (var rcf = 2; rcf < 60; rcf++) { if (/bonus/i.test(str(cfg.get('J' + rcf))) && typeof cfg.get('K' + rcf) === 'number') { config.bonusMonth = cfg.get('K' + rcf); break; } }
 
@@ -564,7 +571,39 @@
       liveSnap.variation = snapshots.length ? liveSnap.totalNtd - snapshots[snapshots.length - 1].totalNtd : 0;
     }
 
+    // ---- Depenses mensuelles moyennes par categorie (Transactions P42:X56) ----
+    function monthlyAverages() {
+      var minE = C.avgMinEntries || 20, minM = C.avgMinMonths || 6;
+      var by = {};
+      rows.forEach(function (t) {
+        if (t.pending) return;
+        var y = by[t.year] || (by[t.year] = { m: {} });
+        var mo = y.m[t.month] || (y.m[t.month] = { n: 0, rev: 0, vq: 0, log: 0, ext: 0, inv: 0, imp: 0, df: 0 });
+        mo.n++;
+        if (eq(t.cat, SAL)) { mo.rev += t.credit / (1 - k); mo.imp += t.credit * gross; }
+        if (eq(t.cat, BON)) mo.rev += t.credit;
+        if (eq(t.cat, VQ)) mo.vq += t.debit;
+        if (eq(t.cat, LOY) || eq(t.cat, GLF)) mo.log += t.debit;
+        if (eq(t.cat, EXT)) mo.ext += t.debit;
+        if (eq(t.cat, INV)) mo.inv += t.debit;
+        if (eq(t.cat, IMP)) mo.imp += t.debit;
+        if (eq(t.cat, DF)) mo.df += t.debit;
+      });
+      var KEYS = ['rev', 'vq', 'log', 'ext', 'inv', 'imp', 'df'];
+      var out = Object.keys(by).map(Number).sort().map(function (yy) {
+        var filled = Object.keys(by[yy].m).filter(function (m) { return by[yy].m[m].n >= minE; });
+        var o = { year: yy, months: filled.length, kept: filled.length >= minM };
+        KEYS.forEach(function (kk) { var s0 = 0; filled.forEach(function (m) { s0 += by[yy].m[m][kk]; }); o[kk] = o.kept && filled.length ? s0 / filled.length : null; });
+        return o;
+      });
+      var kept = out.filter(function (o) { return o.kept; }), avg = { months: 0 };
+      kept.forEach(function (o) { avg.months += o.months; });
+      KEYS.forEach(function (kk) { var s1 = 0; kept.forEach(function (o) { s1 += o[kk] * o.months; }); avg[kk] = avg.months ? s1 / avg.months : null; });
+      return { years: out, avg: avg, minEntries: minE, minMonths: minM };
+    }
+
     return {
+      monthlyAverages: monthlyAverages,
       cb: cb, budget: budget, lastFullMonth: lastFull, snapshots: snapshots, liveSnap: liveSnap,
       today: today, rate: rate, balances: bal, tracked: tracked, pendingTotal: pendingTotal,
       pendingRows: rows.filter(function (t) { return t.pending; }),

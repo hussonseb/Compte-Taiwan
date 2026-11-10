@@ -591,6 +591,7 @@
       a.slice().reverse().map(function (y) { return '<tr class="click" data-y="' + y.year + '"><td><b>' + y.year + '</b></td><td class="n">' + nc(y.revenus) + '</td><td class="n">' + nc(y.depenses) + '</td><td class="n ' + cls(y.bilan) + '">' + nc(y.bilan) + '</td><td class="n">' + pctOk(y.tauxEpargneBudget) + '</td></tr>'; }).join('') + '</tbody></table><p class="small muted">Touchez une année pour le détail. Tableau complet sur grand écran.</p></div><div class="tablewrap only-desk"><table class="t"><thead><tr><th class="sticky">Année</th><th class="n">Revenus</th><th class="n">Dépenses</th><th class="n">Bilan</th><th class="n">Taux d\'épargne</th><th class="n">Épargne</th><th class="n">Taux d\'épargne réel</th><th class="n">Épargne cumulée</th><th class="n">Investissements</th><th class="n">Impôts</th><th class="n">Loyer+GLF</th><th class="n">Vie quot.</th><th class="n">Extras</th><th class="n">Business net</th></tr></thead><tbody>' +
       a.slice().reverse().map(function (y) { return '<tr class="click" data-y="' + y.year + '"><td class="sticky"><b>' + y.year + '</b></td><td class="n">' + n0(y.revenus) + '</td><td class="n">' + n0(y.depenses) + '</td><td class="n ' + cls(y.bilan) + '">' + signed(y.bilan) + '</td><td class="n">' + (y.tauxEpargne == null ? '–' : pf.format(y.tauxEpargne)) + '</td><td class="n ' + cls(y.epargne) + '">' + signed(y.epargne) + '</td><td class="n">' + pctOk(y.tauxEpargneBudget) + '</td><td class="n">' + n0(y.cumul) + '</td><td class="n">' + n0(y.investissements) + '</td><td class="n">' + n0(y.impots) + '</td><td class="n">' + n0(y.loyerGlf) + '</td><td class="n">' + n0(y.vieQuotidienne) + '</td><td class="n">' + n0(y.extras) + '</td><td class="n ' + cls(y.business) + '">' + signed(y.business) + '</td></tr>'; }).join('') +
       '</tbody></table></div></div>';
+    html += avgSection(r);
     $('#view-hist').innerHTML = html;
     $$('#view-hist tr[data-y]').forEach(function (tr) { tr.onclick = function () { state.year = +tr.dataset.y; show('year'); }; });
     var labels = a.map(function (y) { return String(y.year); });
@@ -634,6 +635,27 @@
         { label: 'Patrimoine total', data: sn.map(function (x) { return Math.round(x.totalNtd); }), borderColor: css('--s1'), backgroundColor: css('--s1'), borderWidth: 2, pointRadius: 4, pointBorderColor: css('--surface'), pointBorderWidth: 2 },
         { label: 'Investi cumulé', data: sn.map(function (x) { return Math.round(x.invested); }), borderColor: css('--s2'), backgroundColor: css('--s2'), borderWidth: 2, pointRadius: 4, pointBorderColor: css('--surface'), pointBorderWidth: 2 }] }, options: baseOpts() });
     }
+  }
+
+
+  // Depenses mensuelles moyennes par categorie et par annee (Transactions P42:X56)
+  function avgSection(r) {
+    var A = r.monthlyAverages(), C = [['rev', 'Revenus (brut)'], ['vq', 'Dépenses quotidiennes'], ['log', 'Logement'], ['ext', 'Extras'], ['inv', 'Investissements'], ['imp', 'Impôts'], ['df', 'Dépenses fixes']];
+    var kept = A.years.filter(function (o) { return o.kept; }), excl = A.years.filter(function (o) { return !o.kept; });
+    var h = '<div class="card section"><div class="chart-head"><h2>Dépenses mensuelles moyennes par catégorie</h2><span class="small muted">par mois rempli</span></div>';
+    // PC : une ligne par annee
+    h += '<div class="tablewrap only-desk"><table class="t"><thead><tr><th class="sticky">Année</th>' + C.map(function (c) { return '<th class="n">' + c[1] + '</th>'; }).join('') + '<th class="n">Mois retenus</th></tr></thead><tbody>' +
+      kept.slice().reverse().map(function (o) { return '<tr><td class="sticky"><b>' + o.year + '</b></td>' + C.map(function (c) { return '<td class="n">' + n0(o[c[0]]) + '</td>'; }).join('') + '<td class="n">' + o.months + '</td></tr>'; }).join('') +
+      '<tr class="total"><td class="sticky">Moyenne</td>' + C.map(function (c) { return '<td class="n">' + n0(A.avg[c[0]]) + '</td>'; }).join('') + '<td class="n">' + A.avg.months + '</td></tr></tbody></table></div>';
+    // telephone : une ligne par categorie, une colonne par annee
+    var ys = kept.slice(-3);
+    h += '<div class="only-phone"><table class="t compact"><thead><tr><th></th>' + ys.map(function (o) { return '<th class="n">' + o.year + '</th>'; }).join('') + '<th class="n">Moy.</th></tr></thead><tbody>' +
+      C.map(function (c) { var sh = { rev: 'Revenus', vq: 'Quotidien', log: 'Logement', ext: 'Extras', inv: 'Investis.', imp: 'Impôts', df: 'Dép. fixes' }[c[0]]; return '<tr' + (c[0] === 'rev' ? ' class="total"' : '') + '><td>' + sh + '</td>' + ys.map(function (o) { return '<td class="n">' + nc(o[c[0]]) + '</td>'; }).join('') + '<td class="n"><b>' + nc(A.avg[c[0]]) + '</b></td></tr>'; }).join('') +
+      '<tr><td class="muted">Mois</td>' + ys.map(function (o) { return '<td class="n muted">' + o.months + '</td>'; }).join('') + '<td class="n muted">' + A.avg.months + '</td></tr></tbody></table></div>';
+    h += '<p class="small muted">Comme le tableau Excel (Transactions, « Dépenses mensuelles moyennes ») : un mois compte s\'il a au moins ' + A.minEntries + ' lignes datées, une année est retenue à partir de ' + A.minMonths + ' mois remplis' +
+      (excl.length ? ' (non retenue : ' + excl.map(function (o) { return o.year + ', ' + o.months + ' mois'; }).join(' ; ') + ')' : '') +
+      '. Revenus = salaire brut reconstitué + bonus ; Logement = loyer + GuanLiFei ; Impôts = impôts payés + retenue à la source estimée ; lignes en attente exclues.</p></div>';
+    return h;
   }
 
   // ---------- Budget & Prevision ----------
