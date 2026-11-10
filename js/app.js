@@ -33,7 +33,13 @@
   // ---------- mode confidentialite ----------
   // 'off' | 'blur' (montants floutes) | 'demo' (montants multiplies par un facteur secret, coherents entre eux)
   var privacy = loadJSON('fin_privacy', { mode: 'off', k: 1 });
-  function pk() { return privacy.mode === 'demo' ? privacy.k : 1; }
+  function pkPriv() { return privacy.mode === 'demo' ? privacy.k : 1; }
+  // affichage en euros (bouton NT$/€) : tous les montants NT$ sont convertis au taux du classeur
+  var curEUR = false;
+  function fx() { return curEUR && state.data && state.data.rate ? 1 / state.data.rate : 1; }
+  function pk() { return pkPriv() * fx(); }
+  function sym() { return curEUR ? '€' : 'NT$'; }
+  function raw0(v) { if (v == null || isNaN(v)) return '–'; v = v * pkPriv(); if (Math.round(v) === 0) v = 0; return nf0.format(Math.round(v)).replace(/\u202f/g, '\u00a0'); }
   function setPrivacy(mode) {
     privacy = { mode: mode, k: mode === 'demo' ? +(Math.random() < 0.5 ? 0.4 + Math.random() * 0.35 : 1.4 + Math.random() * 1.1).toFixed(4) : 1 };
     saveJSON('fin_privacy', privacy); applyPrivacy(); renderAll();
@@ -45,8 +51,8 @@
     var b = $('#btnPriv'); if (b) { b.textContent = privacy.mode === 'off' ? '👁' : privacy.mode === 'blur' ? 'Flou' : 'Démo'; b.classList.toggle('accent', privacy.mode !== 'off'); }
   }
   function n0(v) { if (v != null && !isNaN(v)) { v = v * pk(); if (Math.round(v) === 0) v = 0; } return v == null || isNaN(v) ? '–' : nf0.format(Math.round(v)).replace(/ /g, ' '); }
-  function ntd(v) { return n0(v) + ' NT$'; }
-  function eur(v) { return n0(v) + ' €'; }
+  function ntd(v) { return n0(v) + '\u00a0' + sym(); }
+  function eur(v) { return raw0(v) + '\u00a0€'; } // montant deja en euros : jamais reconverti
   function signed(v) { return (Math.round(v * pk()) > 0 ? '+' : '') + n0(v); }
   function cls(v) { return v > 0 ? 'pos' : v < 0 ? 'neg' : ''; }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -260,7 +266,7 @@
     }
     // 1. Resume
     html += '<div class="grid sum">';
-    html += '<div class="card kpi hero"><div class="l">Patrimoine total</div><div class="v">' + ntd(r.netWorthNtd) + '</div><div class="s">' + eur(r.netWorthEur) + ' · 1 € = ' + nf2.format(r.rate) + ' NT$' + (r.pendingTotal ? '<br>lignes en attente déduites (' + n0(r.pendingTotal) + ')' : '') + '</div></div>';
+    html += '<div class="card kpi hero"><div class="l">Patrimoine total</div><div class="v">' + ntd(r.netWorthNtd) + '</div><div class="s">' + (curEUR ? raw0(r.netWorthNtd) + '\u00a0NT$' : eur(r.netWorthEur)) + ' · 1 € = ' + nf2.format(r.rate) + ' NT$' + (r.pendingTotal ? '<br>lignes en attente déduites (' + n0(r.pendingTotal) + ')' : '') + '</div></div>';
     html += '<div class="card kpi"><div class="l">P&amp;L placements</div><div class="v ' + cls(r.plNtd) + '">' + signed(r.plNtd) + '</div><div class="s">' + (r.platInvNtd ? pf.format(r.plNtd / r.platInvNtd) : '') + ' sur ' + nfc.format(r.platInvNtd * pk()) + '</div></div>';
     html += '<div class="card kpi"><div class="l">Bilan ' + y + '</div><div class="v ' + cls(ann.bilan) + '">' + signed(ann.bilan || 0) + '</div><div class="s">Épargne ' + n0(ann.epargne) + ' · taux ' + pctOk(ann.tauxEpargneBudget) + '</div></div>';
     html += '<div class="card accts"><table class="t compact"><thead><tr><th>Comptes</th><th class="n">Solde</th><th class="n">Appli</th></tr></thead><tbody>' +
@@ -357,7 +363,7 @@
       var selNet = rows.reduce(function (s, t) { return s + t.debit - t.credit; }, 0);
       var check = function () {
         var bank = parseAmount($('#bdBank', f).value), box = $('#bdCheck', f);
-        if (isNaN(bank)) { box.innerHTML = '<span class="muted">Lignes sélectionnées : <b>' + n0(selNet) + '</b> NT$ à débiter</span>'; box.className = 'recon'; return; }
+        if (isNaN(bank)) { box.innerHTML = '<span class="muted">Lignes sélectionnées : <b>' + n0(selNet) + '</b> ' + sym() + ' à débiter</span>'; box.className = 'recon'; return; }
         var diff = Math.round((Math.abs(bank) - selNet) * 100) / 100;
         if (diff === 0) { box.className = 'recon ok'; box.innerHTML = '✓ Concorde : lignes ' + n0(selNet) + ' = banque ' + n0(Math.abs(bank)); return; }
         var hint = state.data.tx.filter(function (t) { return t.pending && !t.deleted && Math.abs(t.debit - t.credit - Math.abs(diff)) < 0.5; });
@@ -572,7 +578,7 @@
     $$('#view-year td[data-cat]').forEach(function (td) { td.onclick = function () { state.txFilter = { q: '', compte: cpt === '*' ? '' : cpt, cat: td.dataset.cat, year: String(y), month: +td.dataset.m, pending: false, limit: 80 }; show('tx'); }; });
     var o = baseOpts({ indexAxis: 'y' }); o.scales = { x: { grid: { color: css('--grid') }, border: { display: false }, ticks: { color: css('--ink-3'), callback: function (v) { return nfc.format(v * pk()); } } }, y: { grid: { display: false }, ticks: { color: css('--ink-2') } } };
     o.interaction = { mode: 'nearest', axis: 'y', intersect: false };
-    o.plugins.tooltip.callbacks.label = function (c) { return ' ' + n0(c.parsed.x) + ' NT$'; };
+    o.plugins.tooltip.callbacks.label = function (c) { return ' ' + n0(c.parsed.x) + ' ' + sym(); };
     chart('cCat', { type: 'bar', data: { labels: sp.map(function (x) { return x[0]; }), datasets: [Object.assign(barDs('Débits', sp.map(function (x) { return x[1]; }), css('--s1')), { borderSkipped: 'start' })] }, options: o });
   }
   function pctOk(v) { return v == null || !isFinite(v) || Math.abs(v) > 1.5 ? '–' : pf.format(v); }
@@ -613,8 +619,8 @@
     if (sn.length > 1) h += legend([['Patrimoine total', css('--s1')], ['Investi cumulé', css('--s2')]]) + '<div class="chart"><canvas id="cSnap"></canvas></div>';
     else h += '<p class="small muted">Le graphique d\'évolution apparaît à partir de 2 relevés (un par mois suffit).</p>';
     h += '<div class="only-phone section">' + sn.slice().reverse().map(function (x) { return '<div class="li2"><div><b>' + dstr(x.date) + '</b>' + (x.isNew ? ' <span class="tag new">Nouveau</span>' : '') + '<div class="small muted">taux ' + nf2.format(x.rate) + ' · plus-value <span class="' + cls(x.latent) + '">' + signed(x.latent) + '</span></div></div><div class="r"><b class="num">' + n0(x.totalNtd) + '</b><div class="small ' + cls(x.variation) + '">' + signed(x.variation) + '</div></div></div>'; }).join('') + '</div>';
-    h += '<div class="tablewrap section only-desk"><table class="t"><thead><tr><th class="sticky">Date</th><th class="n">Taux</th><th class="n">Patrimoine NT$</th><th class="n">Patrimoine €</th><th class="n">Comptes TW</th><th class="n">Investi cumulé</th><th class="n">Plus-value</th><th class="n">Variation</th></tr></thead><tbody>' +
-      sn.slice().reverse().map(function (x) { return '<tr><td class="sticky">' + dstr(x.date) + (x.isNew ? ' <span class="tag new">Nouveau</span>' : '') + '</td><td class="n">' + nf2.format(x.rate) + '</td><td class="n"><b>' + n0(x.totalNtd) + '</b></td><td class="n">' + n0(x.totalEur) + '</td><td class="n">' + n0(x.tw) + '</td><td class="n">' + n0(x.invested) + '</td><td class="n ' + cls(x.latent) + '">' + signed(x.latent) + '</td><td class="n ' + cls(x.variation) + '">' + signed(x.variation) + '</td></tr>'; }).join('') +
+    h += '<div class="tablewrap section only-desk"><table class="t"><thead><tr><th class="sticky">Date</th><th class="n">Taux</th><th class="n">Patrimoine ' + sym() + '</th><th class="n">Patrimoine €</th><th class="n">Comptes TW</th><th class="n">Investi cumulé</th><th class="n">Plus-value</th><th class="n">Variation</th></tr></thead><tbody>' +
+      sn.slice().reverse().map(function (x) { return '<tr><td class="sticky">' + dstr(x.date) + (x.isNew ? ' <span class="tag new">Nouveau</span>' : '') + '</td><td class="n">' + nf2.format(x.rate) + '</td><td class="n"><b>' + n0(x.totalNtd) + '</b></td><td class="n">' + raw0(x.totalEur) + '</td><td class="n">' + n0(x.tw) + '</td><td class="n">' + n0(x.invested) + '</td><td class="n ' + cls(x.latent) + '">' + signed(x.latent) + '</td><td class="n ' + cls(x.variation) + '">' + signed(x.variation) + '</td></tr>'; }).join('') +
       '</tbody></table></div><p class="small muted">Un relevé fige les valeurs du jour (valeurs actuelles des plateformes, Compte FR, taux de change). Mettez d\'abord à jour les valeurs dans « Patrimoine ». Comptes TW = lignes datées uniquement ; Family investment au coût.</p></div>';
     return h;
   }
@@ -724,7 +730,7 @@
       kpi('Prévision épargne ' + B.year, '<span class="' + cls(sv.M) + '">' + signed(sv.M) + '</span>', 'budget ' + n0(sv.N) + ' · taux ' + pctOk(sr.M)) +
       kpi('Dépenses prévues ' + B.year, ntd(b.totalDep.M), 'budget ' + n0(b.totalDep.N) + ' · écart ' + signed(b.totalDep.O)) + '</div>';
     html += '<div class="card section"><div class="chart-head"><h2>' + H.title + '</h2><span class="small muted only-desk">Écart positif = favorable</span></div><div class="tablewrap only-desk"><table class="t"><thead><tr><th class="sticky">Poste</th>' + H.cols.map(function (c) { return '<th class="n">' + c[1] + '</th>'; }).join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div>' + budList(b, B.h) +
-      '<p class="small muted">Budgets issus de l\'onglet Situations. Bonus : budget annuel placé en ' + MONTHS_SHORT[(d.config.bonusMonth || 1) - 1] + ' (versé en une fois). Impôts : régularisation N-1 budgétée en ' + MONTHS_SHORT[(d.config.taxMonth || 6) - 1] + '. Retenue à la source estimée sur le salaire (déjà déduite du net) : ' + n0((b.withholdingInfo[{ mois: 'E', cumul: 'H', annee: 'M' }[B.h]]) || 0) + ' NT$.</p></div>';
+      '<p class="small muted">Budgets issus de l\'onglet Situations. Bonus : budget annuel placé en ' + MONTHS_SHORT[(d.config.bonusMonth || 1) - 1] + ' (versé en une fois). Impôts : régularisation N-1 budgétée en ' + MONTHS_SHORT[(d.config.taxMonth || 6) - 1] + '. Retenue à la source estimée sur le salaire (déjà déduite du net) : ' + n0((b.withholdingInfo[{ mois: 'E', cumul: 'H', annee: 'M' }[B.h]]) || 0) + ' ' + sym() + '.</p></div>';
     html += '<div class="card section"><h2>Épargne : budget vs réel / prévision</h2>' + legend([['Budget', css('--s1')], ['Réel / prévision', css('--s2')]]) + '<div class="chart"><canvas id="cBud"></canvas></div></div>';
     $('#view-bud').innerHTML = html;
     $('#bMonth').onchange = function (e) { var p = e.target.value.split('-'); B.year = +p[0]; B.month = +p[1]; renderBudget(); };
@@ -748,12 +754,12 @@
       '<div class="plat total"><div class="pl-n"><b>Total</b><div class="small muted">investi ' + n0(r.platInvNtd) + '</div></div><div class="pl-in"></div><div class="pl-v"><b class="num">' + n0(r.platValueNtd) + '</b><div class="small ' + cls(r.plNtd) + '">' + signed(r.plNtd) + (r.platInvNtd ? ' (' + pf.format(r.plNtd / r.platInvNtd) + ')' : '') + '</div></div></div></div></div>';
     html += '<div class="grid g2 stack-sm section"><div class="card"><h2>Liquidités</h2><table class="t"><tbody>' +
       r.liquid.map(function (l) { return '<tr><td>' + esc(l.name) + (l.manual ? '<div class="inline-edit" style="margin-top:6px"><input class="inp" inputmode="decimal" id="frVal" value="' + (d.fr.value == null ? '' : esc(String(d.fr.value))) + '">' + devSel('frDev', d.fr.devise) + '</div>' : '') + '</td><td class="n">' + n0(l.ntd) + '</td></tr>'; }).join('') +
-      '<tr class="total"><td>Total (NT$)</td><td class="n">' + n0(r.liquidNtd) + '</td></tr></tbody></table><p class="small muted">SCB et Richart sont calculés depuis les lignes ; seul le Compte FR se saisit à la main.</p></div>' +
+      '<tr class="total"><td>Total (' + sym() + ')</td><td class="n">' + n0(r.liquidNtd) + '</td></tr></tbody></table><p class="small muted">SCB et Richart sont calculés depuis les lignes ; seul le Compte FR se saisit à la main.</p></div>' +
       '<div class="card"><h2>Taux de change</h2><div class="inline-edit"><span>1 € =</span><input class="inp" id="rateVal" inputmode="decimal" value="' + esc(String(d.rate)) + '"><span>NT$</span></div><p class="small muted">Dernière mise à jour : ' + (d.rateDate ? dstr(d.rateDate) : '–') + '. Source unique du classeur (Transactions!' + d.rateRef.col + d.rateRef.row + ').</p>' +
       '<h3>Hors patrimoine</h3><table class="t"><tbody>' + r.others.map(function (o) { return '<tr><td>' + esc(o.type) + '</td><td class="n">' + ntd(o.investedNtd) + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
     var mvAll = d.inv.filter(function (x) { return !x.empty; }), mv = mvAll.slice(0, state.mvLimit || 8);
     html += '<div class="card section"><div class="chart-head"><h2>Mouvements d\'investissement</h2><button type="button" class="btn primary" id="btnInvAdd">+ Ajouter</button></div><div class="mvlist">' +
-      mv.map(function (x) { var nt = x.devise === 'EUR' ? x.montant * d.rate : x.montant; return '<div class="li2"><div><b>' + esc(x.type) + '</b>' + (x.isNew ? ' <span class="tag new">Nouveau</span>' : '') + '<div class="small muted">' + (x.date != null ? dstr(x.date) : '—') + '</div></div><div class="r"><b class="num ' + cls(x.montant) + '">' + n0(x.montant) + ' ' + esc(x.devise === 'EUR' ? '€' : 'NT$') + '</b>' + (x.devise === 'EUR' ? '<div class="small muted">' + n0(nt) + ' NT$</div>' : '') + '</div></div>'; }).join('') +
+      mv.map(function (x) { var nt = x.devise === 'EUR' ? x.montant * d.rate : x.montant; return '<div class="li2"><div><b>' + esc(x.type) + '</b>' + (x.isNew ? ' <span class="tag new">Nouveau</span>' : '') + '<div class="small muted">' + (x.date != null ? dstr(x.date) : '—') + '</div></div><div class="r"><b class="num ' + cls(x.montant) + '">' + raw0(x.montant) + ' ' + esc(x.devise === 'EUR' ? '€' : 'NT$') + '</b>' + ((x.devise === 'EUR') !== curEUR ? '<div class="small muted">' + n0(nt) + ' ' + sym() + '</div>' : '') + '</div></div>'; }).join('') +
       '</div>' + (mvAll.length > mv.length ? '<button type="button" class="btn more" id="mvMore">Afficher plus (' + (mvAll.length - mv.length) + ')</button>' : '') + '<p class="small muted">Montant négatif = retrait. Les mouvements existants se corrigent dans Excel.</p></div>';
     $('#view-inv').innerHTML = html;
 
@@ -857,6 +863,7 @@
     $('#btnSync').onclick = function () { syncDrive(false); };
     $('#btnChanges').onclick = openChanges;
     $('#btnMenu').onclick = openMenu;
+    $('#btnCur').onclick = function () { curEUR = !curEUR; var b = $('#btnCur'); b.textContent = curEUR ? '€' : 'NT$'; b.classList.toggle('accent', curEUR); renderAll(); toast(curEUR ? 'Montants affichés en euros (1 € = ' + nf2.format(state.data ? state.data.rate : 0) + ' NT$)' : 'Montants affichés en NT$'); };
     $('#btnPriv').onclick = function () { setPrivacy(privacy.mode === 'off' ? 'blur' : privacy.mode === 'blur' ? 'demo' : 'off'); };
     $('#fab').onclick = function () { openTxForm(null); };
     document.addEventListener('click', function (e) { var m = $('#menu'); if (!m.hidden && !m.contains(e.target) && e.target.id !== 'btnMenu') m.hidden = true; });
